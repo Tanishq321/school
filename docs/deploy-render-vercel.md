@@ -40,8 +40,8 @@ One service serves the API, the WebSocket and the website from the same address.
    - `MONGODB_URI`: from step 1 (required)
    - `TURN_URLS`, `TURN_SECRET`, `STUN_URLS`: see section 3 (leave empty to start)
    - `SMTP_*`, `MAIL_FROM`: optional (see "Email" below)
-3. Deploy. Open `https://<service>.onrender.com`. `APP_URL` defaults to Render's own URL automatically.
-4. Check `https://<service>.onrender.com/api/health` → `{"status":"ok","db":"up",...}`.
+3. Deploy. Open `https://kaksha-58u1.onrender.com`. `APP_URL` defaults to Render's own URL automatically.
+4. Check `https://kaksha-58u1.onrender.com/api/health` → `{"status":"ok","db":"up",...}`.
 
 ## 2b. Option B: frontend on Vercel, backend on Render
 
@@ -51,10 +51,10 @@ One service serves the API, the WebSocket and the website from the same address.
    - `CORS_ORIGINS` = `https://<your-app>.vercel.app`
    - `RATE_LIMIT_MULTIPLIER` = `5` (API calls arrive via Vercel's proxy, so many users may appear to share a few IPs)
    - optionally change the build command to just `cd backend && npm ci --omit=dev`
-2. In `frontend/vercel.json`, replace all three `YOUR-RENDER-SERVICE` with your Render service name. Commit and push.
+2. In `frontend/vercel.json`, replace all three `kaksha-58u1` with your Render service name. Commit and push.
 3. Vercel → **Add New → Project** → import the repo:
    - **Root Directory:** `frontend`
-   - **Environment Variable:** `VITE_SOCKET_URL` = `https://<service>.onrender.com`
+   - **Environment Variable:** `VITE_SOCKET_URL` = `https://kaksha-58u1.onrender.com`
 4. Deploy and open `https://<your-app>.vercel.app`.
 
 How it fits together: `/api/*` is forwarded by Vercel to Render, so the browser sees one origin and the secure login cookie keeps working. Socket.IO connects **directly** to Render; it authenticates with the access token, so no cookie is needed. The automated test suite runs exactly this layout (`E2E_SPLIT=1 node run-e2e.mjs`).
