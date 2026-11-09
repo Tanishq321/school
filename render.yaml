@@ -1,0 +1,55 @@
+# Render Blueprint: one web service that serves the API, Socket.IO signalling AND the built frontend
+# (same origin, so login cookies and WebSockets just work). Render → New → Blueprint → pick this repo.
+#
+# For "frontend on Vercel + backend on Render" see docs/deploy-render-vercel.md (Option B).
+# Render cannot run coturn (no UDP ports); point TURN_URLS at a coturn on a small VPS.
+services:
+  - type: web
+    name: kaksha
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: cd frontend && npm ci --include=dev && npm run build && cd ../backend && npm ci --omit=dev
+    startCommand: cd backend && node src/server.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY
+        value: "1"
+      - key: SERVE_FRONTEND_DIST
+        value: ../frontend/dist
+      # Test deployment: missing SMTP/TURN are logged as warnings instead of stopping the server.
+      - key: STRICT_PRODUCTION_CHECKS
+        value: "false"
+      # No SMTP yet → nobody could receive verification emails. Set to true once SMTP_* is filled in.
+      - key: REQUIRE_EMAIL_VERIFICATION
+        value: "false"
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: MEETING_TOKEN_SECRET
+        generateValue: true
+      - key: INVITE_SECRET
+        generateValue: true
+      # Fill these in the dashboard (sync: false = Render prompts you, never stored in git):
+      - key: MONGODB_URI
+        sync: false
+      - key: STUN_URLS
+        sync: false
+      - key: TURN_URLS
+        sync: false
+      - key: TURN_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false

@@ -1,0 +1,164 @@
+[
+  {
+    "name": "[direct] teacher registers + verifies email",
+    "ok": true,
+    "ms": 3906
+  },
+  {
+    "name": "[direct] student registers + verifies email",
+    "ok": true,
+    "ms": 3765
+  },
+  {
+    "name": "[direct] teacher creates instant meeting and starts it",
+    "ok": true,
+    "ms": 206,
+    "detail": "code vbs-upsy-uzh"
+  },
+  {
+    "name": "[direct] student joins by link and lands in waiting room",
+    "ok": true,
+    "ms": 918
+  },
+  {
+    "name": "[direct] teacher admits student from the waiting room",
+    "ok": true,
+    "ms": 561
+  },
+  {
+    "name": "[direct] teacher receives student video",
+    "ok": true,
+    "ms": 1505,
+    "detail": "480x270, +28 frames in 1.5s"
+  },
+  {
+    "name": "[direct] student receives teacher video",
+    "ok": true,
+    "ms": 1505,
+    "detail": "320x180, +30 frames in 1.5s"
+  },
+  {
+    "name": "[direct] teacher hears student audio",
+    "ok": true,
+    "ms": 7,
+    "detail": "speaking indicator triggered by remote audio"
+  },
+  {
+    "name": "[direct] student hears teacher audio",
+    "ok": true,
+    "ms": 160,
+    "detail": "speaking indicator triggered by remote audio"
+  },
+  {
+    "name": "[direct] media path is direct",
+    "ok": true,
+    "ms": 6,
+    "detail": "badge \"Good\""
+  },
+  {
+    "name": "[direct] student mutes mic → teacher sees muted indicator",
+    "ok": true,
+    "ms": 76
+  },
+  {
+    "name": "[direct] student turns camera off/on → teacher sees avatar, then video again",
+    "ok": true,
+    "ms": 2065,
+    "detail": "1280x720, +30 frames in 1.5s"
+  },
+  {
+    "name": "[direct] backend restart mid-call: media keeps flowing, both sides rejoin",
+    "ok": true,
+    "ms": 13764,
+    "detail": "during outage: 480x270, +31 frames in 1.5s"
+  },
+  {
+    "name": "[direct] teacher ends class for everyone",
+    "ok": true,
+    "ms": 118
+  },
+  {
+    "name": "[direct] attendance shows the student with real time in class",
+    "ok": true,
+    "ms": 1155,
+    "detail": "Ravi Student | Mon, Nov 9, 6:37 PM | Mon, Nov 9, 6:38 PM | 9s | 2"
+  },
+  {
+    "name": "[relay] teacher registers + verifies email",
+    "ok": true,
+    "ms": 3801
+  },
+  {
+    "name": "[relay] student registers + verifies email",
+    "ok": true,
+    "ms": 3684
+  },
+  {
+    "name": "[relay] teacher creates instant meeting and starts it",
+    "ok": true,
+    "ms": 169,
+    "detail": "code bjl-qhsc-mnp"
+  },
+  {
+    "name": "[relay] student joins by link and lands in waiting room",
+    "ok": true,
+    "ms": 945
+  },
+  {
+    "name": "[relay] teacher admits student from the waiting room",
+    "ok": true,
+    "ms": 150
+  },
+  {
+    "name": "[relay] teacher receives student video",
+    "ok": true,
+    "ms": 2222,
+    "detail": "640x360, +31 frames in 1.5s"
+  },
+  {
+    "name": "[relay] student receives teacher video",
+    "ok": true,
+    "ms": 1510,
+    "detail": "640x360, +31 frames in 1.5s"
+  },
+  {
+    "name": "[relay] teacher hears student audio",
+    "ok": true,
+    "ms": 124,
+    "detail": "speaking indicator triggered by remote audio"
+  },
+  {
+    "name": "[relay] student hears teacher audio",
+    "ok": true,
+    "ms": 296,
+    "detail": "speaking indicator triggered by remote audio"
+  },
+  {
+    "name": "[relay] media path is TURN relay",
+    "ok": true,
+    "ms": 4,
+    "detail": "badge \"Good · relayed\""
+  },
+  {
+    "name": "[relay] student mutes mic → teacher sees muted indicator",
+    "ok": true,
+    "ms": 73
+  },
+  {
+    "name": "[relay] student turns camera off/on → teacher sees avatar, then video again",
+    "ok": true,
+    "ms": 2077,
+    "detail": "1280x720, +30 frames in 1.5s"
+  },
+  {
+    "name": "[relay] teacher ends class for everyone",
+    "ok": true,
+    "ms": 133
+  },
+  {
+    "name": "[relay] attendance shows the student with real time in class",
+    "ok": true,
+    "ms": 925,
+    "detail": "Ravi Student | Mon, Nov 9, 6:38 PM | Mon, Nov 9, 6:38 PM | 7s | 1"
+  }
+]
