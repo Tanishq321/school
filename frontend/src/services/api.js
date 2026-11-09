@@ -87,9 +87,12 @@ export async function api(path, { method = 'GET', body, retry = true } = {}) {
     }
   }
   if (res.status === 204) return null;
-  const data = await res.json().catch(() => ({}));
+  const isJson = (res.headers.get('content-type') || '').includes('application/json');
+  const data = isJson ? await res.json().catch(() => ({})) : {};
   if (!res.ok) {
-    throw new ApiError(res.status, data.error?.code || 'error', data.error?.message || `Request failed (${res.status})`, data.error?.details);
+    // A non-JSON error means the request never reached our API (e.g. a hosting proxy/rewrite is misconfigured).
+    const fallback = isJson ? `Request failed (${res.status})` : `Can't reach the server (HTTP ${res.status}). The app's API connection is misconfigured or the server is starting up; try again in a minute.`;
+    throw new ApiError(res.status, data.error?.code || (isJson ? 'error' : 'api_unreachable'), data.error?.message || fallback, data.error?.details);
   }
   return data;
 }
