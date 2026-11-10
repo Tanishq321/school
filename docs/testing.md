@@ -10,7 +10,7 @@ Each test file uses a throwaway database. Coverage:
 
 - **auth.test.js**: registration validation, login (generic errors), `/me` protection, refresh rotation + reuse detection + family revocation, foreign-origin refresh refused, logout, email verification (single use), password reset (revokes sessions, no account enumeration), security headers.
 - **meetings.test.js**: role and verification gates, code format and uniqueness, scheduled-meeting validation, host vs guest views, malformed/unknown codes, password enforcement, invite-token bypass, invite rotation, TURN credential format (secret never leaked), host-only update/end/attendance, closed meetings refuse joins, listing, automatic expiry.
-- **sfu.test.js** (real mediasoup worker): SFU mode and capacity, admit all, non-member and cross-user id rejection, one transport per direction, source/kind validation, producer announcement → consume → resume, late-joiner producer list, host mute pauses the producer, mute all, self-unmute off blocks resume and forces paused mic, raise hand, grant speak, lock (423 for newcomers, returning members allowed), remove (consumers closed, peer removed, REST 403), router closed on end.
+- **sfu.test.js** (real mediasoup worker): SFU mode, class size 2, group-only events gone, a second student refused even by the host, non-member and cross-user id rejection, one transport per direction, source/kind validation, producer announcement → consume → resume, host mute pauses the producer (student may unmute), lock (423 for newcomers, the student can return), remove (peer removed, REST 403), the freed seat can be taken, router closed on end.
 - **classroom.test.js** (real mediasoup worker): chat broadcast + persistence, markup kept as text, empty/oversized rejected, history for late joiners, host-only delete (soft, persisted), host-only chat mode, rate limiting; whiteboard open (host only), drawing permission, strict op validation (coordinates, colour, tool, shape points, unknown fields, empty text, duplicates), live strokes relayed but not stored, erase limited to author/host, redo, persistence (flat point storage), host-only clear; screen-share permission, single slot, host take-over, SFU screen producer requires the slot, revoking permission closes it, leaving frees it.
 - **recording.test.js** (real mediasoup worker plus FFmpeg feeding synthetic Opus/VP8 RTP into producers):
   - Invitations: emails with `.ics`, case-insensitive dedupe, the invitee's calendar range (an outsider's range doesn't include it, the 62-day cap is enforced), `.ics` export, the summary page (host-only notes, attendance, guests, transcript; an outsider gets 403), and invitees skip the waiting room.
@@ -40,10 +40,10 @@ What this proves and what it doesn't: the WebRTC stack is real (ICE, DTLS, SRTP,
 
 | Suite | Result |
 |---|---|
-| Backend (Vitest): auth, meetings, sockets, SFU + host controls, chat / whiteboard / screen share, **recording, invitations, calendar, class pages** | 65 / 65 |
-| E2E peer-to-peer (`node run-e2e.mjs`): direct + TURN relay (attendance now checked through the new class page) | 35 / 35 |
-| E2E split origins (`E2E_SPLIT=1`, Vercel-style proxy + direct sockets) | 35 / 35 |
-| E2E SFU (`E2E_SFU=1`): direct, relay, 5-browser group class, **real recording** | 63 / 63 |
+| Backend (Vitest): auth, meetings, sockets (incl. one-student rule, two early arrivals), SFU + host controls, chat / whiteboard / screen share, recording, invitations, calendar, class pages | 66 / 66 |
+| E2E peer-to-peer (`node run-e2e.mjs`): direct + TURN relay + **seat rule** (3 browsers: the second student can't be admitted until the first leaves) | 39 / 39 |
+| E2E split origins (`E2E_SPLIT=1`, Vercel-style proxy + direct sockets) | 39 / 39 |
+| E2E SFU (`E2E_SFU=1`): direct, relay, seat rule, **real recording** | 49 / 49 |
 
 New Phase 4 E2E scenario (`recording`, two real Chrome instances through the SFU, with simulcast):
 1. The teacher clicks *Record this class* → *Begin recording*.
@@ -74,6 +74,5 @@ These need physical hardware and separate networks. They have **not** been run y
 | Chrome Android | ☐ | ☐ | ☐ | — | ☐ | ☐ |
 | Safari iOS 17+ | ☐ | ☐ | ☐ | — | ☐ | ☐ |
 | Capacitor Android / iOS | Phase 5 | | | | | |
-| Group class, 6+ real devices | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 
 Networks to cover: home Wi-Fi ↔ mobile data; corporate/school network that blocks UDP (should fall back to TURN over TCP 3478 or TURNS 5349); symmetric NAT (mobile carrier CGNAT).

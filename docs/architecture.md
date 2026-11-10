@@ -21,7 +21,7 @@ This document describes the target architecture for the whole platform and recor
                                │ (Phase 2) RTP over UDP/TCP 40000-49999 direct to clients
    Media (Phase 1, 1-to-1):  peer ◄──── DTLS-SRTP ────► peer          (direct, host/srflx)
                              peer ◄──► coturn (3478 / 5349, relay 49152-65535) ◄──► peer
-   Media (Phase 2, groups):  client ◄──── DTLS-SRTP ────► mediasoup SFU (optionally via coturn)
+   Media (via media server): client ◄──── DTLS-SRTP ────► mediasoup SFU (optionally via coturn)
 ```
 
 * **Nginx** never carries media. It only proxies HTTPS and the Socket.IO WebSocket. Media goes either peer-to-peer, through coturn, or (Phase 2) to mediasoup's own UDP/TCP ports, which must be opened in the firewall separately.
@@ -47,8 +47,8 @@ Participants never receive another user's credentials, socket ids, or internal r
 |---|---|---|---|
 | Server mode | Topology | Limit | When |
 |---|---|---|---|
-| `MEDIASOUP_ENABLED=false` | P2P WebRTC (deterministic initiator) + TURN fallback | 2 people (`P2P_MAX_PARTICIPANTS`) | Hosts without UDP ports (e.g. Render): 1-to-1 classes only |
-| `MEDIASOUP_ENABLED=true` (Phase 2) | mediasoup SFU for **every** meeting | `maxParticipants` per meeting, capped by `SFU_MAX_PARTICIPANTS` (20) | VPS deployments: groups of up to 20 |
+| `MEDIASOUP_ENABLED=false` | P2P WebRTC (deterministic initiator) + TURN fallback | teacher + 1 student | Hosts without UDP ports (e.g. Render); no recording |
+| `MEDIASOUP_ENABLED=true` | mediasoup SFU relays the one-to-one call | teacher + 1 student | VPS deployments; enables server-side recording |
 
 The mode is decided per server, not per meeting: one code path per deployment is easier to operate and server-side recording (Phase 4) needs media on the SFU anyway.
 
@@ -65,7 +65,7 @@ The mode is decided per server, not per meeting: one code path per deployment is
 
 ### Host controls (enforced on the server)
 
-Mute one or all (pauses the mic producer on the SFU), "students may unmute themselves" permission with per-student "allow to speak", lower hands, remove (stored ban; REST join returns 403), lock (new joins return 423; people already admitted can reconnect), admit all. In P2P mode the server can't pause media, so mute is delivered to the client and the UI enforces it.
+Mute the student (pauses their mic producer on the SFU; they may unmute again), remove (stored in `bannedUsers`, REST join then returns 403), lock (newcomers get 423), and per-class permissions for presenting, drawing and chat. **One student per class:** besides the host, only one member may be in the room; a second admission is refused with `meeting_full`, including when two students arrive before the host. Group-only controls (admit all, mute all, raise hand, "allow to speak") were removed.
 
 ## 3b. Classroom features (Phase 3)
 
@@ -135,7 +135,7 @@ browser ─SRTP─▶ mediasoup Router ──DirectTransport consumers (in-proce
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Project init, auth, dashboard, meeting create/join, waiting room, 1-to-1 WebRTC, Socket.IO signalling, coturn config, diagnostics | Implemented and tested here (see testing.md) |
-| 2 | mediasoup SFU, group meetings up to 20, host controls (mute/mute-all/remove/lock/permissions), raise hand, grid & speaker layouts, premium redesign | Implemented and tested here (see testing.md) |
+| 2 | mediasoup SFU, host controls (mute/remove/lock/permissions), premium redesign (group features since removed: one-to-one only) | Implemented and tested here (see testing.md) |
 | 3 | Screen share (SFU + P2P), chat (persisted, moderated), whiteboard (live strokes, undo/redo, persisted), attendance CSV, classroom permissions, landing page, sound cues | Implemented and tested here (see testing.md) |
 | 4 | Consent-based recording (mediasoup → DirectTransport → per-track files → FFmpeg MP4), archive & signed playback, invitations + .ics, calendar, class pages (notes, attendance, transcript), dark-first shell | Implemented and tested here (see testing.md) |
 | 5 | Admin dashboard, hardening, monitoring, Capacitor apps | Not started |

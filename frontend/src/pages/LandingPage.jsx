@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutGrid, MessageSquareText, Mic, MonitorUp, PenTool, PhoneOff, Users, Video } from 'lucide-react';
+import { CircleDot, MessageSquareText, Mic, MonitorUp, PenTool, PhoneOff, Users, Video } from 'lucide-react';
 import LacquerCanvas from '../components/brand/LacquerCanvas.jsx';
 import { Avatar, Logo, Monogram } from '../components/ui/index.jsx';
 
@@ -33,12 +33,12 @@ function useScrollProgress(ref) {
 }
 
 const SPEC = [
-  ['Class size', 'One-to-one, or up to twenty people face to face.'],
+  ['Class size', 'One teacher, one student. Always. A private tutorial, never a crowd.'],
   ['Infrastructure', 'Your servers. Audio and video travel through your own media server and relay, never a third-party video service.'],
   ['Encryption', 'Every stream is encrypted in transit. We say exactly that, and no more.'],
-  ['Teaching tools', 'A shared board with pen, shapes and text; presentation; chat; raised hands.'],
-  ['Authority', 'Admit, mute, remove and lock, decided by the host and enforced by the server.'],
-  ['Records', 'Attendance from actual join and leave times, exportable for your files.'],
+  ['Teaching tools', 'A shared board with pen, shapes and text; presentation; chat; recording with consent.'],
+  ['Authority', 'Admit, mute, remove and lock, decided by the teacher and enforced by the server.'],
+  ['Records', 'Attendance, transcripts, private notes and a film of each lesson, kept on your servers.'],
 ];
 
 export default function LandingPage() {
@@ -75,7 +75,7 @@ export default function LandingPage() {
             room.
           </h1>
           <p className="mt-10 max-w-xl text-[clamp(1.05rem,1.4vw,1.25rem)] leading-relaxed text-vellum/70">
-            Live one-to-one and small-group teaching for families and institutions that expect discretion, clarity and calm. Hosted on servers you control.
+            Private one-to-one tutoring for families and institutions that expect discretion, clarity and calm. One teacher, one student, on servers you control.
           </p>
           <div className="mt-10 flex flex-wrap items-center gap-4">
             <Link
@@ -105,15 +105,15 @@ export default function LandingPage() {
         >
           <ProductStage drawn={drawn} />
         </div>
-        <p className="mx-auto mt-10 max-w-md text-center text-sm text-vellum/50">The classroom as your students see it: the board in the centre, everyone present, nothing in the way.</p>
+        <p className="mx-auto mt-10 max-w-md text-center text-sm text-vellum/50">The lesson as your student sees it: the board in the centre, the two of you, nothing in the way.</p>
       </section>
 
       {/* ---------------------------------------------------------------- editorial */}
       <section className="mx-auto grid max-w-7xl gap-x-16 gap-y-20 px-6 py-24 sm:px-10 lg:grid-cols-2">
-        <Chapter title="A room that behaves." body="Students raise a hand and wait to be invited. The teacher decides who speaks, who presents and who may draw. Those decisions are enforced by the server, not merely hidden in the interface." />
+        <Chapter title="A room for two." body="Every lesson is one-to-one. The seat opposite the teacher holds exactly one student, and the server refuses anyone else: no crowding, no strangers, no distractions." />
         <Chapter title="Yours, entirely." body="Classes run on infrastructure you own, from the media server to the relay. No outside video company sits between a teacher and a student, and the sessions answer only to you." />
         <Chapter title="Made for long sessions." body="Each picture is sent at the size it is shown. Connections mend themselves after a dropped network. Sound cues are quiet. Shortcuts keep hands on the material, not the interface." />
-        <Chapter title="Nothing to install." body="It opens in the browser on a laptop, tablet or phone. Students follow a link, wait to be admitted, and are in the room." />
+        <Chapter title="Nothing to install." body="It opens in the browser on a laptop, tablet or phone. Your student follows the invitation, and is let straight in." />
       </section>
 
       {/* ---------------------------------------------------------------- specification */}
@@ -179,8 +179,6 @@ function ProductStage({ drawn }) {
   const people = [
     { name: 'Meera Sen', host: true, speaking: true },
     { name: 'Arjun Kapoor' },
-    { name: 'Leah Mistry' },
-    { name: 'Kabir Rao' },
   ];
   const stroke = (len, delay) => ({
     strokeDasharray: len,
@@ -235,11 +233,11 @@ function ProductStage({ drawn }) {
             </svg>
           </div>
           {/* Filmstrip */}
-          <div className="grid grid-cols-4 gap-3">
+          <div className="flex justify-center gap-3">
             {people.map((p) => (
               <div
                 key={p.name}
-                className={`lamplight relative flex aspect-video items-center justify-center rounded-[14px] ${p.speaking ? 'shadow-[0_0_0_2px_var(--color-brand-300),0_0_28px_-6px_rgba(216,190,140,.6)]' : 'shadow-[inset_0_0_0_1px_rgba(236,230,218,.07)]'}`}
+                className={`lamplight relative flex aspect-video w-[30%] max-w-[13rem] items-center justify-center rounded-[14px] ${p.speaking ? 'shadow-[0_0_0_2px_var(--color-brand-300),0_0_28px_-6px_rgba(216,190,140,.6)]' : 'shadow-[inset_0_0_0_1px_rgba(236,230,218,.07)]'}`}
               >
                 <Avatar name={p.name} size={38} />
                 <span className="absolute bottom-1.5 left-2.5 truncate text-[11px] text-vellum/85">{p.name.split(' ')[0]}</span>
@@ -250,13 +248,13 @@ function ProductStage({ drawn }) {
         {/* Chat sheet */}
         <div className="hidden flex-col rounded-[18px] border border-vellum/[0.08] bg-night-2/80 p-4 text-[13px] md:flex">
           <div className="mb-3 flex gap-1 rounded-full bg-night/60 p-1 text-xs">
-            <span className="flex-1 rounded-full py-1 text-center text-vellum/60">People 4</span>
+            <span className="flex-1 rounded-full py-1 text-center text-vellum/60">People 2</span>
             <span className="flex-1 rounded-full bg-vellum py-1 text-center text-ink">Chat</span>
           </div>
           {[
             ['Arjun', 'Why is it exactly 2?'],
             ['Meera Sen', 'Look at each half of the arch.'],
-            ['Leah', 'Oh. One plus one.'],
+            ['Arjun', 'Oh. One plus one.'],
           ].map(([who, text]) => (
             <div key={text} className="pt-3">
               <p className={`font-semibold ${who === 'Meera Sen' ? 'text-brand-300' : 'text-vellum'}`}>{who}</p>
@@ -264,14 +262,14 @@ function ProductStage({ drawn }) {
             </div>
           ))}
           <div className="mt-auto flex items-center gap-2 rounded-2xl border border-vellum/10 bg-night-3/70 px-3 py-2 text-vellum/40">
-            <MessageSquareText size={13} /> Message the class
+            <MessageSquareText size={13} /> Message Meera
           </div>
         </div>
       </div>
       {/* Dock */}
       <div className="flex justify-center pb-5">
         <div className="flex items-center gap-2 rounded-full border border-vellum/10 bg-night-2/70 p-2 backdrop-blur">
-          {[Mic, Video, MonitorUp, PenTool, LayoutGrid, MessageSquareText, Users].map((Icon, i) => (
+          {[Mic, Video, MonitorUp, PenTool, CircleDot, MessageSquareText, Users].map((Icon, i) => (
             <span key={i} className={`flex size-9 items-center justify-center rounded-full ${i === 3 ? 'bg-brand-300 text-ink' : 'bg-vellum/[0.07] text-vellum/80'}`}>
               <Icon size={15} strokeWidth={1.6} />
             </span>

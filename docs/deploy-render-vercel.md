@@ -9,7 +9,7 @@ Good for **testing Phase 1** with real people on real devices. It isn't the prod
 | Backend (API + Socket.IO) | Render web service | supports WebSockets |
 | Frontend | Render (same service) **or** Vercel | your choice, see Option A / B |
 | TURN (coturn) | a small VPS | Render and Vercel accept only HTTP(S) on 80/443, with no UDP, so coturn can't run there |
-| mediasoup SFU (group classes) | a VPS | needs UDP/TCP ports. On Render the app runs with `MEDIASOUP_ENABLED=false`: 1-to-1 classes work, group classes need the VPS |
+| mediasoup SFU (needed for recording) | a VPS | needs UDP/TCP ports. On Render the app runs with `MEDIASOUP_ENABLED=false`: one-to-one classes work browser-to-browser, without recording. |
 
 ## 0. Push to GitHub
 
@@ -97,6 +97,6 @@ Use two real devices on **different networks** (e.g. laptop on Wi-Fi + phone on 
 
 ## What Render can't do
 
-Render web services have no inbound UDP, so the mediasoup SFU, and therefore **group classes and recording**, need a VPS (see deployment.md §8b–8c). On Render the app runs in 1-to-1 peer-to-peer mode. The record button is hidden, and the Recordings page explains that recording isn't enabled on this server.
+Render web services have no inbound UDP, so the mediasoup SFU, and therefore **recording**, needs a VPS (see deployment.md §8b–8c). On Render, one-to-one classes run browser-to-browser. The record button is hidden, and the Recordings page explains that recording isn't enabled on this server.
 
 The product name shown in the app is **Scholé**. The Render service URL (`kaksha-58u1.onrender.com`) is just a hostname and can stay. To change it, rename the service in Render and update `frontend/vercel.json` and `VITE_SOCKET_URL`.

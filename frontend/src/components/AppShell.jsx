@@ -148,7 +148,7 @@ export function AuthLayout({ title, subtitle, children, footer }) {
           <div className="hairline mb-10 w-40" />
           <p className="animate-reveal font-display text-[3.4rem] leading-[1.04] font-normal">A private room for serious study.</p>
           <p className="mt-6 max-w-md text-[17px] leading-relaxed text-vellum/70">
-            Live one-to-one and small-group classes, recorded only with consent, on infrastructure that answers only to you.
+            Private one-to-one lessons, recorded only with consent, on infrastructure that answers only to you.
           </p>
           <p className="mt-10 font-display text-sm text-vellum/40 italic">{BRAND.name} — {BRAND.etymology}</p>
         </div>

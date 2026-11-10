@@ -69,7 +69,7 @@ export default function TodayPage() {
           {isHostRole && (
             <div className="card grid grid-cols-2 gap-3 p-3">
               <ActionTile icon={Video} label="Open a room" hint="Start now" onClick={startInstant} busy={creating} disabled={needsVerification} />
-              <ActionTile icon={CalendarPlus} label="Schedule" hint="Invite guests" onClick={() => setScheduleOpen(true)} disabled={needsVerification} />
+              <ActionTile icon={CalendarPlus} label="Schedule" hint="Invite a student" onClick={() => setScheduleOpen(true)} disabled={needsVerification} />
             </div>
           )}
           <JoinCard disabled={needsVerification} />
@@ -138,7 +138,7 @@ export default function TodayPage() {
           setScheduleOpen(false);
           upcoming.reload();
           copyText(m.inviteUrl).then((ok) =>
-            toast(m.invitees?.length ? `Scheduled. ${m.invitees.length} invitation${m.invitees.length > 1 ? 's' : ''} sent.` : ok ? 'Scheduled. Invitation link copied.' : 'Scheduled.', { tone: 'success' }),
+            toast(m.invitees?.length ? `Scheduled. Invitation sent to ${m.invitees[0]}.` : ok ? 'Scheduled. Invitation link copied.' : 'Scheduled.', { tone: 'success' }),
           );
         }}
       />
@@ -174,9 +174,9 @@ function NextClass({ meeting: m }) {
         <span>{start.toDateString() === new Date().toDateString() ? 'today' : start.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</span>
         <span>{m.durationMinutes} minutes</span>
         {!m.isHost && m.hostName && <span>with {m.hostName}</span>}
-        {m.isHost && m.invitees?.length > 0 && (
+        {m.isHost && m.invitees?.[0] && (
           <span className="inline-flex items-center gap-1.5">
-            <Users size={14} strokeWidth={1.5} /> {m.invitees.length} guest{m.invitees.length > 1 ? 's' : ''}
+            <Users size={14} strokeWidth={1.5} /> {m.invitees[0]}
           </span>
         )}
       </div>
@@ -214,7 +214,7 @@ function ClearCalendar({ isHost, onSchedule }) {
       <p className="relative text-[11px] font-medium tracking-[0.28em] text-brand-300/90 uppercase">Nothing scheduled</p>
       <h2 className="relative mt-4 max-w-md font-display text-[2.4rem] leading-[1.05]">Your calendar is clear.</h2>
       <p className="relative mt-3 max-w-md text-vellum/65">
-        {isHost ? 'Schedule a class and your guests receive an invitation and a calendar entry.' : 'When a teacher invites you, the class appears here with a countdown.'}
+        {isHost ? 'Schedule a one-to-one class and your student receives an invitation and a calendar entry.' : 'When a teacher invites you, the class appears here with a countdown.'}
       </p>
       {isHost && (
         <div className="relative mt-8">

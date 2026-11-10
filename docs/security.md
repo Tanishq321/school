@@ -30,7 +30,7 @@
 
 - **All WebRTC media is encrypted in transit** with DTLS-SRTP. Browsers won't send unencrypted media.
 - **Phase 1 (1-to-1, peer-to-peer):** DTLS keys are negotiated directly between the two browsers. When the call is relayed, coturn only forwards already-encrypted packets and cannot decrypt them. The signalling server, however, relays the SDP containing the DTLS fingerprints. A compromised signalling server could in theory perform a man-in-the-middle attack by swapping fingerprints. We don't verify fingerprints out of band, so this is **not** end-to-end encryption in the strict sense.
-- **Phase 2+ (SFU):** mediasoup terminates DTLS-SRTP. Media is decrypted on our server to be forwarded. Group calls are encrypted in transit but **not end-to-end encrypted**.
+- **Phase 2+ (SFU):** mediasoup terminates DTLS-SRTP. Media is decrypted on our server to be forwarded. Calls through the SFU are encrypted in transit but **not end-to-end encrypted**.
 - We make no E2EE claims in the UI. The lobby says "encrypted in transit". True E2EE for SFU calls would need Insertable Streams / SFrame with client-side key management. It isn't planned yet.
 - Signalling and the API are protected by TLS (HTTPS/WSS) via Nginx.
 

@@ -171,7 +171,7 @@ export default function ClassDetailPage() {
           <aside className="space-y-10">
             <Notes code={m.code} initial={data.notes} />
             <section>
-              <h3 className="mb-4 text-[11px] font-medium tracking-[0.24em] text-brand-600 uppercase dark:text-brand-300/80">Guests</h3>
+              <h3 className="mb-4 text-[11px] font-medium tracking-[0.24em] text-brand-600 uppercase dark:text-brand-300/80">Student</h3>
               {data.guests?.length ? (
                 <ul className="space-y-2.5">
                   {data.guests.map((g) => (
@@ -189,7 +189,7 @@ export default function ClassDetailPage() {
                 </ul>
               ) : (
                 <p className="text-sm text-ink-2 dark:text-slate-400">
-                  <UserRound size={14} className="mr-1 inline" strokeWidth={1.5} /> No guests were invited by email.
+                  <UserRound size={14} className="mr-1 inline" strokeWidth={1.5} /> No student was invited by email. Share the invitation link instead.
                 </p>
               )}
             </section>
@@ -205,8 +205,8 @@ export default function ClassDetailPage() {
           onSaved={(saved) => {
             setEditing(false);
             load();
-            const added = (saved.invitees?.length || 0) - (m.invitees?.length || 0);
-            toast(added > 0 ? `Saved. ${added} new invitation${added > 1 ? 's' : ''} sent.` : 'Saved.', { tone: 'success' });
+            const invited = saved.invitees?.[0] && saved.invitees[0] !== m.invitees?.[0];
+            toast(invited ? `Saved. Invitation sent to ${saved.invitees[0]}.` : 'Saved.', { tone: 'success' });
           }}
         />
       )}

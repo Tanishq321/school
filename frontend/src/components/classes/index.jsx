@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarPlus, Copy, KeyRound, Lock, Mail, Radio, Trash2, Users, X } from 'lucide-react';
+import { CalendarPlus, Copy, KeyRound, Lock, Mail, Radio, Trash2, Users } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import { api, API_BASE, getAccessToken, freshAccessToken } from '../../services/api.js';
 import { Alert, Button, Field, Modal, Toggle } from '../ui/index.jsx';
@@ -86,7 +86,7 @@ export function AgendaRow({ meeting: m, onChanged }) {
             {m.title}
           </Link>
           {m.status === 'live' && <StatusBadge status="live" />}
-          {m.invited && <span className="rounded-full border border-brand-400/40 px-2 py-0.5 text-[11px] tracking-wide text-brand-600 dark:text-brand-300">Guest</span>}
+          {m.invited && <span className="rounded-full border border-brand-400/40 px-2 py-0.5 text-[11px] tracking-wide text-brand-600 dark:text-brand-300">Your class</span>}
         </div>
         <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-ink-2 dark:text-slate-400">
           <span>{m.durationMinutes} minutes</span>
@@ -106,9 +106,9 @@ export function AgendaRow({ meeting: m, onChanged }) {
               <Users size={13} strokeWidth={1.6} /> {m.liveParticipants} in the room
             </span>
           )}
-          {m.isHost && m.invitees?.length > 0 && (
+          {m.isHost && m.invitees?.[0] && (
             <span className="inline-flex items-center gap-1">
-              <Mail size={13} strokeWidth={1.6} /> {m.invitees.length} guest{m.invitees.length > 1 ? 's' : ''}
+              <Mail size={13} strokeWidth={1.6} /> {m.invitees[0]}
             </span>
           )}
           {!m.isHost && m.hostName && <span>with {m.hostName}</span>}
@@ -169,63 +169,6 @@ export function downloadAttendance(meeting, rows) {
 }
 
 
-/** Email "chips": type or paste addresses separated by commas, spaces or new lines. */
-export function EmailChips({ value, onChange, max = 100 }) {
-  const [draft, setDraft] = useState('');
-  const [error, setError] = useState(null);
-  const inputRef = useRef(null);
-  const add = (raw) => {
-    const parts = raw.split(/[\s,;]+/).map((p) => p.trim().toLowerCase()).filter(Boolean);
-    if (!parts.length) return;
-    const bad = parts.filter((p) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p));
-    const good = parts.filter((p) => !bad.includes(p) && !value.includes(p));
-    if (good.length) onChange([...value, ...good].slice(0, max));
-    setError(bad.length ? `Not an email address: ${bad.join(', ')}` : null);
-    setDraft(bad.join(' '));
-  };
-  return (
-    <div>
-      <label className="label">Guests</label>
-      <div
-        className="input flex min-h-[46px] cursor-text flex-wrap items-center gap-1.5 py-1.5"
-        onClick={() => inputRef.current?.focus()}
-      >
-        {value.map((email) => (
-          <span key={email} className="inline-flex items-center gap-1.5 rounded-full border border-brand-400/30 bg-brand-400/10 py-0.5 pr-1 pl-2.5 text-[13px] text-brand-700 dark:text-brand-100">
-            <Mail size={12} strokeWidth={1.6} />
-            {email}
-            <button type="button" className="rounded-full p-0.5 hover:bg-brand-400/20" onClick={() => onChange(value.filter((e) => e !== email))} aria-label={`Remove ${email}`}>
-              <X size={12} />
-            </button>
-          </span>
-        ))}
-        <input
-          ref={inputRef}
-          className="min-w-[10rem] flex-1 bg-transparent py-1 outline-none"
-          placeholder={value.length ? '' : 'name@school.edu, another@…'}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (['Enter', ',', ' ', 'Tab'].includes(e.key) && draft.trim()) {
-              if (e.key !== 'Tab') e.preventDefault();
-              add(draft);
-            } else if (e.key === 'Backspace' && !draft && value.length) onChange(value.slice(0, -1));
-          }}
-          onPaste={(e) => {
-            e.preventDefault();
-            add(e.clipboardData.getData('text'));
-          }}
-          onBlur={() => draft.trim() && add(draft)}
-          aria-label="Guest email addresses"
-        />
-      </div>
-      <p className={`mt-1.5 text-xs ${error ? 'text-danger' : 'text-ink-2 dark:text-slate-400'}`}>
-        {error || 'Guests receive an invitation with a calendar file, and are let straight in.'}
-      </p>
-    </div>
-  );
-}
-
 /** Schedule (or reschedule) a class. `initialStart` pre-fills the date, e.g. from the calendar. */
 export function ScheduleModal({ open, onClose, onSaved, initialStart, meeting }) {
   const editing = Boolean(meeting);
@@ -279,17 +222,25 @@ export function ScheduleModal({ open, onClose, onSaved, initialStart, meeting })
           <Field label="Begins" type="datetime-local" required value={form.start} onChange={(e) => setForm({ ...form, start: e.target.value })} />
           <Field label="Minutes" type="number" min={5} max={600} step={5} required value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} />
         </div>
-        <EmailChips value={form.invitees} onChange={(invitees) => setForm({ ...form, invitees })} />
+        <Field
+          label="Student’s email"
+          type="email"
+          placeholder="student@example.com"
+          autoComplete="off"
+          value={form.invitees[0] || ''}
+          onChange={(e) => setForm({ ...form, invitees: e.target.value.trim() ? [e.target.value.trim().toLowerCase()] : [] })}
+          hint="Optional. Classes are one-to-one: your student gets an invitation with a calendar file and is let straight in."
+        />
         <div>
           <label className="label" htmlFor="sched-desc">
-            Note for guests <span className="font-normal text-ink-2/70">(optional)</span>
+            Note for your student <span className="font-normal text-ink-2/70">(optional)</span>
           </label>
           <textarea id="sched-desc" className="input min-h-[84px] resize-y" maxLength={2000} placeholder="Reading for this session, what to prepare…" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
         </div>
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label={editing && meeting.settings?.hasPassword ? 'New password (optional)' : 'Password (optional)'} type="text" autoComplete="off" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} hint="Guests and invite links skip it." minLength={4} maxLength={64} />
           <div className="pt-6">
-            <Toggle checked={form.waitingRoom} onChange={(v) => setForm({ ...form, waitingRoom: v })} label="Waiting room" description="Approve anyone who isn't a guest." />
+            <Toggle checked={form.waitingRoom} onChange={(v) => setForm({ ...form, waitingRoom: v })} label="Waiting room" description="Approve anyone who isn't your invited student." />
           </div>
         </div>
         <div className="flex justify-end gap-2 border-t border-line/70 pt-5 dark:border-night-line">
@@ -297,7 +248,7 @@ export function ScheduleModal({ open, onClose, onSaved, initialStart, meeting })
             Cancel
           </Button>
           <Button type="submit" loading={state.loading}>
-            <CalendarPlus size={16} strokeWidth={1.6} /> {editing ? 'Save changes' : form.invitees.length ? `Schedule & invite ${form.invitees.length}` : 'Schedule'}
+            <CalendarPlus size={16} strokeWidth={1.6} /> {editing ? 'Save changes' : form.invitees.length ? 'Schedule & invite' : 'Schedule'}
           </Button>
         </div>
       </form>

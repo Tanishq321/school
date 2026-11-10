@@ -4,7 +4,7 @@ import { P2PPeer } from './p2pPeer.js';
 import { SfuSession } from './sfuSession.js';
 import { playCue } from './sounds.js';
 
-const CUE_FOR = { joined: 'join', left: 'leave', waiting: 'knock', hand: 'hand', chat: 'message' };
+const CUE_FOR = { joined: 'join', left: 'leave', waiting: 'knock', chat: 'message' };
 const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 /**
@@ -156,19 +156,12 @@ export class MeetingClient extends EventTarget {
         const before = this.state.self;
         this._set({ self: { ...before, ...p, audio: before.audio, video: before.video } });
       } else {
-        const prev = this.state.participants.find((x) => x.userId === p.userId);
-        if (p.handRaised && !prev?.handRaised) this._notify('hand', { name: p.name });
         this._upsertParticipant(p);
       }
     });
-    socket.on('participant:mutedByHost', ({ canSpeak }) => {
+    socket.on('participant:mutedByHost', () => {
       this.localMedia.setAudioEnabled(false);
-      this._set({ self: { ...this.state.self, canSpeak } });
       this._notify('mutedByHost', {});
-    });
-    socket.on('participant:speakPermission', ({ canSpeak }) => {
-      this._set({ self: { ...this.state.self, canSpeak, handRaised: canSpeak ? false : this.state.self?.handRaised } });
-      this._notify(canSpeak ? 'speakGranted' : 'speakRevoked', {});
     });
     socket.on('room:activeSpeaker', ({ userId }) => this._set({ activeSpeaker: userId }));
 
@@ -636,16 +629,8 @@ export class MeetingClient extends EventTarget {
     return this._ack('host:permissions', changes);
   }
 
-  admitAll() {
-    return this._ack('waiting:admitAll');
-  }
-
   mute(userId) {
     return this._ack('host:mute', { userId });
-  }
-
-  muteAll() {
-    return this._ack('host:muteAll');
   }
 
   remove(userId) {
@@ -654,23 +639,6 @@ export class MeetingClient extends EventTarget {
 
   setLocked(locked) {
     return this._ack('host:lock', { locked });
-  }
-
-  setAllowSelfUnmute(allowSelfUnmute) {
-    return this.setPermissions({ allowSelfUnmute });
-  }
-
-  grantSpeak(userId, granted) {
-    return this._ack('host:grantSpeak', { userId, granted });
-  }
-
-  lowerHand(userId) {
-    return this._ack('host:lowerHand', { userId });
-  }
-
-  async raiseHand(raised) {
-    await this._ack('participant:raiseHand', { raised });
-    this._set({ self: { ...this.state.self, handRaised: raised } });
   }
 
   deny(userId) {

@@ -124,7 +124,7 @@ export function RecordButton({ state, client, toast, ToolButton }) {
       />
       <Modal open={confirm} onClose={() => setConfirm(false)} title="Record this class?">
         <div className="space-y-4 text-[15px] text-ink-2 dark:text-slate-300">
-          <p>Everyone in the room is told, sees the red lamp, and is asked for consent. Nobody is captured until they agree, and anyone can change their mind.</p>
+          <p>Your student is told, sees the red lamp, and is asked for consent. They are not captured until they agree, and can change their mind at any time.</p>
           <ul className="space-y-2 text-sm">
             <li className="flex gap-2.5">
               <ShieldCheck size={16} strokeWidth={1.6} className="mt-0.5 shrink-0 text-brand-500" /> Recorded on this server only, private to you until you share it.

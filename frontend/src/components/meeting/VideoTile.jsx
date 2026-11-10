@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Crown, Hand, Loader2, MicOff, Pin, WifiOff } from 'lucide-react';
+import { Crown, Loader2, MicOff, WifiOff } from 'lucide-react';
 import { Avatar } from '../ui/index.jsx';
 import { useAudioLevel } from '../../hooks/useAudioLevel.js';
 
@@ -32,9 +32,6 @@ export default function VideoTile({
   audioTrack,
   isLocal,
   isHost,
-  handRaised,
-  pinned,
-  onPin,
   mirrored,
   fit = 'contain',
   reconnecting,
@@ -74,21 +71,6 @@ export default function VideoTile({
         </div>
       )}
 
-      {handRaised && (
-        <span className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full bg-brand-300 px-2.5 py-1 text-xs font-semibold text-ink shadow-lg" aria-label="Hand raised">
-          <Hand size={13} strokeWidth={2} /> {compact ? '' : 'Hand raised'}
-        </span>
-      )}
-      {onPin && (
-        <button
-          onClick={onPin}
-          className={`absolute top-3 right-3 rounded-full p-2 text-vellum backdrop-blur transition ${pinned ? 'bg-brand-400/90 text-ink' : 'bg-night/50 opacity-0 group-hover:opacity-100 focus:opacity-100'}`}
-          aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`}
-          aria-pressed={pinned}
-        >
-          <Pin size={14} strokeWidth={1.8} />
-        </button>
-      )}
 
       <div className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-gradient-to-t from-night/85 via-night/30 to-transparent px-3 pt-8 pb-2.5 text-vellum">
         {!audioOn && (

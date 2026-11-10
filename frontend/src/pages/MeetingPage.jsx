@@ -7,10 +7,7 @@ import {
   MonitorX,
   PenTool,
   Copy,
-  GalleryHorizontalEnd,
-  Hand,
   Hourglass,
-  LayoutGrid,
   Lock,
   Mic,
   MicOff,
@@ -343,29 +340,6 @@ function useElapsed(since) {
   return since ? now - new Date(since).getTime() : 0;
 }
 
-function useSize(ref) {
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  useEffect(() => {
-    if (!ref.current) return undefined;
-    const ro = new ResizeObserver(([e]) => setSize({ width: e.contentRect.width, height: e.contentRect.height }));
-    ro.observe(ref.current);
-    return () => ro.disconnect();
-  }, [ref]);
-  return size;
-}
-
-/** Columns and tile width so every 16:9 tile fits on screen without scrolling (up to ~20 people). */
-function gridGeometry(count, { width, height }, gap = 12) {
-  if (!width || !height) return { cols: 1, tileWidth: 0 };
-  let best = { cols: 1, tileWidth: 0 };
-  for (let cols = 1; cols <= Math.min(count, 6); cols += 1) {
-    const rows = Math.ceil(count / cols);
-    const w = Math.min((width - gap * (cols - 1)) / cols, ((height - gap * (rows - 1)) / rows) * (16 / 9));
-    if (w > best.tileWidth) best = { cols, tileWidth: Math.floor(w) };
-  }
-  return best;
-}
-
 function Room({ client, state, media, localMedia }) {
   const toast = useToast();
   const navigate = useNavigate();
@@ -381,17 +355,12 @@ function Room({ client, state, media, localMedia }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [leaveMenu, setLeaveMenu] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
-  const [layout, setLayout] = useState('grid'); // grid | speaker (used with 2+ others)
-  const [pinned, setPinned] = useState(null);
   const stageRef = useRef(null);
-  const stage = useSize(stageRef);
   const joinedAt = useRef(Date.now());
   const elapsed = useElapsed(joinedAt.current);
   const self = state.self;
   const isHost = self?.isHost;
   const remotes = state.participants;
-  const canSpeak = self?.canSpeak !== false;
-  const hands = remotes.filter((p) => p.handRaised).length;
 
   useEffect(() => {
     const onNotice = ({ detail }) => {
@@ -399,15 +368,12 @@ function Room({ client, state, media, localMedia }) {
         joined: `${detail.name} joined`,
         left: `${detail.name} left`,
         waiting: `${detail.name} is waiting to join`,
-        hand: isHost ? `${detail.name} raised a hand` : null,
-        mutedByHost: 'The host muted your microphone',
-        speakGranted: 'The host has invited you to speak',
-        speakRevoked: 'The host has turned your microphone off',
+        mutedByHost: 'Your teacher muted your microphone. You can unmute when ready.',
         unmute_refused: detail.message,
         mediaError: detail.message,
         chat: detail.type === 'chat' ? `${detail.name}: ${detail.text.length > 70 ? `${detail.text.slice(0, 70)}…` : detail.text}` : null,
         screenStopped: 'Your presentation was stopped',
-        recordingStarted: isHost ? 'Recording. Everyone has been asked for consent.' : null,
+        recordingStarted: isHost ? 'Recording. Your student has been asked for consent.' : null,
         recordingStopped:
           detail.reason === 'time_limit'
             ? 'Recording stopped at its time limit'
@@ -425,13 +391,7 @@ function Room({ client, state, media, localMedia }) {
     return () => client.removeEventListener('notice', onNotice);
   }, [client, toast, isHost]);
 
-  const toggleMic = useCallback(() => {
-    if (!media.audioEnabled && !canSpeak) {
-      toast('The host has turned off unmuting. Raise your hand to ask to speak.');
-      return;
-    }
-    localMedia.toggleAudio();
-  }, [media.audioEnabled, canSpeak, localMedia, toast]);
+  const toggleMic = useCallback(() => localMedia.toggleAudio(), [localMedia]);
 
   // Keyboard shortcuts: Ctrl/⌘+D mic, Ctrl/⌘+E camera.
   useEffect(() => {
@@ -449,11 +409,12 @@ function Room({ client, state, media, localMedia }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [localMedia, toggleMic]);
 
-  // Stage priority: a presentation, then the board, then the people layouts.
+  // Stage priority: a presentation, then the board, then the two of you.
   const n = remotes.length;
   const sharer = state.screenSharer;
   const presenting = sharer && (sharer === self?.userId ? 'self' : remotes.find((p) => p.userId === sharer)) ? 'screen' : null;
-  const view = presenting || (state.boardOpen ? 'board' : n === 0 ? 'solo' : n === 1 ? 'pair' : layout);
+  // One-to-one: just you (waiting for the other side), or the two of you.
+  const view = presenting || (state.boardOpen ? 'board' : n === 0 ? 'solo' : 'pair');
   const presenter = remotes.find((p) => p.userId === sharer);
   const toggleShare = async () => {
     try {
@@ -464,22 +425,16 @@ function Room({ client, state, media, localMedia }) {
     }
   };
   const canDraw = isHost || Boolean(state.meeting?.permissions?.allowDrawing);
-  const present = (id) => remotes.some((p) => p.userId === id);
-  const focusId =
-    (pinned && present(pinned) && pinned) ||
-    (state.activeSpeaker && present(state.activeSpeaker) && state.activeSpeaker) ||
-    remotes.find((p) => p.isHost)?.userId ||
-    remotes[0]?.userId;
 
   // Ask the SFU for the simulcast layer each tile actually needs (saves everyone's bandwidth).
   const remoteIds = remotes.map((p) => p.userId).join(',');
   useEffect(() => {
     for (const p of remotes) {
-      const layer = view === 'pair' ? 2 : view === 'speaker' ? (p.userId === focusId ? 2 : 0) : view === 'grid' ? (n + 1 <= 4 ? 1 : 0) : 0;
+      const layer = view === 'pair' ? 2 : 0; // full quality for the person you're facing; thumbnail while presenting
       client.setVideoQuality(p.userId, layer);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, view, focusId, remoteIds, n]);
+  }, [client, view, remoteIds]);
 
   const onBlocked = useCallback(() => setAudioBlocked(true), []);
   const unblockAudio = () => {
@@ -518,7 +473,6 @@ function Room({ client, state, media, localMedia }) {
       audioTrack={media.audioTrack}
       isLocal
       isHost={isHost}
-      handRaised={self?.handRaised}
       mirrored={media.facingMode !== 'environment'}
       fit="cover"
       {...props}
@@ -534,9 +488,6 @@ function Room({ client, state, media, localMedia }) {
       audioOn={p.audio}
       audioTrack={p.stream?.getAudioTracks()[0]}
       isHost={p.isHost}
-      handRaised={p.handRaised}
-      pinned={pinned === p.userId}
-      onPin={n > 1 ? () => setPinned((cur) => (cur === p.userId ? null : p.userId)) : undefined}
       reconnecting={p.reconnecting}
       connecting={!p.reconnecting && p.connectionState !== 'connected'}
       quality={p.stats?.quality}
@@ -546,8 +497,6 @@ function Room({ client, state, media, localMedia }) {
 
   const sinkId = media.prefs.audiooutput;
   const network = state.network || remotes[0]?.stats;
-  const grid = gridGeometry(n + 1, stage);
-  const focus = remotes.find((p) => p.userId === focusId);
 
   return (
     <div className="dark lamplight flex h-dvh flex-col text-vellum" data-testid="meeting-room" data-layout={view}>
@@ -589,7 +538,7 @@ function Room({ client, state, media, localMedia }) {
                   <div className="flex h-full flex-col items-center justify-center gap-6 text-center" data-testid="presenting-self">
                     <div className="hairline w-32" />
                     <p className="font-display text-4xl font-normal">You are presenting.</p>
-                    <p className="max-w-sm text-slate-400">Everyone in the room sees your screen. Your camera tile stays visible below.</p>
+                    <p className="max-w-sm text-slate-400">Your student sees your screen. Your camera tile stays visible below.</p>
                     <Button onClick={toggleShare} className="!bg-none !bg-danger">
                       <MonitorX size={17} strokeWidth={1.6} /> Stop presenting
                     </Button>
@@ -613,7 +562,7 @@ function Room({ client, state, media, localMedia }) {
               <div className="w-full max-w-3xl space-y-6">
                 {localTile({ className: 'aspect-video w-full' })}
                 <div className="flex flex-col items-center gap-4 text-center">
-                  <p className="font-display text-2xl font-normal text-vellum/90">{isHost ? 'The room is ready.' : 'Waiting for others to join.'}</p>
+                  <p className="font-display text-2xl font-normal text-vellum/90">{isHost ? 'The room is ready for your student.' : 'Your teacher will be with you shortly.'}</p>
                   {isHost && (
                     <Button variant="secondary" onClick={copyInvite} className="!border-night-line !bg-night-3/70 !text-vellum">
                       <Copy size={16} strokeWidth={1.6} /> Copy invitation link
@@ -631,25 +580,6 @@ function Room({ client, state, media, localMedia }) {
             </>
           )}
 
-          {view === 'grid' && (
-            <div className="flex h-full items-center justify-center">
-              {/* Flex-wrap (not CSS grid) so an incomplete last row sits centred. */}
-              <div className="flex flex-wrap content-center justify-center gap-3" style={{ maxWidth: grid.cols * grid.tileWidth + (grid.cols - 1) * 12 }} data-testid="grid">
-                {localTile({ className: 'aspect-video', compact: n + 1 > 4, style: { width: grid.tileWidth } })}
-                {remotes.map((p) => remoteTile(p, { className: 'aspect-video', compact: n + 1 > 4, fit: 'cover', style: { width: grid.tileWidth } }))}
-              </div>
-            </div>
-          )}
-
-          {view === 'speaker' && focus && (
-            <div className="flex h-full flex-col gap-3">
-              <div className="min-h-0 flex-1">{remoteTile(focus, { className: 'h-full w-full' })}</div>
-              <div className="flex shrink-0 gap-3 overflow-x-auto pb-1" data-testid="filmstrip">
-                {localTile({ className: 'aspect-video w-40 shrink-0 sm:w-48', compact: true })}
-                {remotes.filter((p) => p.userId !== focusId).map((p) => remoteTile(p, { className: 'aspect-video w-40 shrink-0 sm:w-48', compact: true, fit: 'cover' }))}
-              </div>
-            </div>
-          )}
         </div>
         {panel && (
           <div className="fixed inset-0 z-40 md:static md:z-auto">
@@ -675,28 +605,12 @@ function Room({ client, state, media, localMedia }) {
           on={media.audioEnabled}
           onClick={toggleMic}
           labelOn="Mute (Ctrl+D)"
-          labelOff={canSpeak ? 'Unmute (Ctrl+D)' : 'Unmuting is off. Raise your hand to speak'}
+          labelOff="Unmute (Ctrl+D)"
           IconOn={Mic}
           IconOff={MicOff}
-          locked={!canSpeak && !media.audioEnabled}
         />
         <RoundButton on={media.videoEnabled} onClick={() => localMedia.toggleVideo()} labelOn="Turn off camera (Ctrl+E)" labelOff="Turn on camera (Ctrl+E)" IconOn={Video} IconOff={VideoOff} />
         {media.canSwitchCamera && media.videoEnabled && <ToolButton onClick={() => localMedia.switchCamera()} label="Switch camera" Icon={SwitchCamera} />}
-        {!isHost && (
-          <ToolButton
-            onClick={() => client.raiseHand(!self?.handRaised).catch((e) => toast(e.message, { tone: 'error' }))}
-            label={self?.handRaised ? 'Lower hand' : 'Raise hand'}
-            Icon={Hand}
-            active={self?.handRaised}
-          />
-        )}
-        {n >= 2 && (
-          <ToolButton
-            onClick={() => setLayout((l) => (l === 'grid' ? 'speaker' : 'grid'))}
-            label={layout === 'grid' ? 'Speaker view' : 'Grid view'}
-            Icon={layout === 'grid' ? GalleryHorizontalEnd : LayoutGrid}
-          />
-        )}
         {(client.canShareScreen || state.sharingScreen) && (
           <ToolButton onClick={toggleShare} label={state.sharingScreen ? 'Stop presenting' : 'Present your screen'} Icon={state.sharingScreen ? MonitorX : MonitorUp} active={state.sharingScreen} />
         )}
@@ -710,7 +624,7 @@ function Room({ client, state, media, localMedia }) {
         )}
         {isHost && <RecordButton state={state} client={client} toast={toast} ToolButton={ToolButton} />}
         <ToolButton onClick={() => openPanel('chat')} label="Chat" Icon={MessageSquareText} active={panel && tab === 'chat'} badge={state.chatUnread} />
-        <ToolButton onClick={() => openPanel('people')} label="People" Icon={Users} active={panel && tab === 'people'} badge={isHost ? state.waiting.length + hands : 0} />
+        <ToolButton onClick={() => openPanel('people')} label="People" Icon={Users} active={panel && tab === 'people'} badge={isHost ? state.waiting.length : 0} />
         <ToolButton onClick={() => setSettingsOpen(true)} label="Settings" Icon={Settings} />
         <div className="relative">
           <button
@@ -726,10 +640,10 @@ function Room({ client, state, media, localMedia }) {
             <div role="menu" className="absolute right-0 bottom-14 w-60 overflow-hidden rounded-2xl border border-night-line bg-night-2 shadow-2xl">
               <button role="menuitem" onClick={leave} className="block w-full px-4 py-3 text-left text-sm hover:bg-night-3">
                 Leave the class
-                <span className="block text-xs text-slate-400">Students can stay in the room</span>
+                <span className="block text-xs text-slate-400">Your student can stay in the room</span>
               </button>
               <button role="menuitem" onClick={endForAll} className="block w-full px-4 py-3 text-left text-sm text-red-300 hover:bg-night-3">
-                End class for everyone
+                End the class
               </button>
             </div>
           )}

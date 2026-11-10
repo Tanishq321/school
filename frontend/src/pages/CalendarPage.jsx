@@ -190,7 +190,7 @@ export default function CalendarPage() {
         onSaved={(m) => {
           setSchedule(null);
           reload();
-          toast(m.invitees?.length ? `Scheduled. ${m.invitees.length} invitation${m.invitees.length > 1 ? 's' : ''} sent.` : 'Scheduled.', { tone: 'success' });
+          toast(m.invitees?.length ? `Scheduled. Invitation sent to ${m.invitees[0]}.` : 'Scheduled.', { tone: 'success' });
         }}
       />
     </div>

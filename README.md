@@ -4,7 +4,9 @@
 
 A video meeting and virtual classroom platform that runs entirely on infrastructure you control: native WebRTC, Socket.IO signalling, coturn, a mediasoup SFU and an in-process FFmpeg recorder. No Zoom, Google Meet, Agora, Twilio, Daily, or hosted Jitsi.
 
-**Status: Phase 4 complete**: consent-based server-side recording with a private archive and player, email invitations with calendar files, a month calendar, a class ledger with notes, attendance and transcripts, on top of group classes, host controls, presentation, chat and whiteboard. See the [roadmap](#roadmap).
+**Every class is one-to-one: one teacher, one student.** The server enforces it in both media modes.
+
+**Status: Phase 4 complete**: consent-based server-side recording with a private archive and player, email invitations with calendar files, a month calendar, a class ledger with notes, attendance and transcripts, on top of teacher controls, presentation, chat and whiteboard. See the [roadmap](#roadmap).
 
 The brand name lives in one place (`frontend/src/brand.js`, `APP_NAME` on the server); set `VITE_APP_NAME` / `APP_NAME` to rename it.
 
@@ -24,7 +26,7 @@ The brand name lives in one place (`frontend/src/brand.js`, `APP_NAME` on the se
   - The host records with one button. Everyone sees a red lamp with the running time and hears a chime.
   - Every participant is asked: *Include me* / *Stay, but don't record me* / *Leave*. Nobody is captured until they agree, and anyone can change their mind at any time.
   - How it works: the media server hands raw RTP to the recorder in-process (mediasoup DirectTransport, no extra ports). Each consenting voice and the on-screen picture (presentation > teacher > current speaker) are written without re-encoding while the class runs. When recording stops, FFmpeg composes one 1280×720 H.264/AAC MP4 with a poster frame.
-  - Off by default (`RECORDING_ENABLED=false`). Group mode (SFU) only.
+  - Off by default (`RECORDING_ENABLED=false`). Needs the media server (`MEDIASOUP_ENABLED=true`, a VPS) so the server can see the call.
 - **Archive and screening room:**
   - Recordings are private to the teacher until shared with the class (attendees and invited guests). Admins have no access.
   - Playback uses short-lived signed links with seeking (HTTP Range), plus download, rename and delete.
@@ -56,8 +58,8 @@ The brand name lives in one place (`frontend/src/brand.js`, `APP_NAME` on the se
 
 ## Phase 2 additions
 
-- **Group classes:** mediasoup SFU (`MEDIASOUP_ENABLED=true`), up to 20 people; simulcast with per-tile quality; active-speaker detection; automatic recovery after reconnects, restarts and worker crashes.
-- **Host controls, enforced on the server:** mute, mute everyone, "students may unmute themselves", allow a student to speak, lower hands, remove (can't rejoin), lock the room, admit all.
+- **Media server:** mediasoup SFU (`MEDIASOUP_ENABLED=true`) with simulcast and automatic recovery after reconnects, restarts and worker crashes. In Phase 4 it carries the one-to-one call so the server can record it.
+- **Teacher controls, enforced on the server:** mute the student, remove (can't rejoin), lock the room, and control what the student may do (present, draw, chat).
 - **Students:** raise/lower hand.
 - **Layouts:** one-to-one with picture-in-picture, auto-fitting grid (centred rows), and speaker view with filmstrip and pinning.
 - **Design:** "private study after hours". Midnight lacquer and porcelain, brushed-brass accents, film grain, self-hosted Bodoni Moda + Hanken Grotesk, an engraved monogram, and a lamplight glow.
@@ -100,7 +102,7 @@ docs/              architecture, setup, deployment, security, testing
 ```bash
 cd backend && npm test                        # 65 API, socket, SFU and recording tests (needs ffmpeg)
 cd frontend && npm run build && cd ../e2e && npm ci && node run-e2e.mjs   # P2P: direct + TURN relay
-E2E_SFU=1 node run-e2e.mjs     # SFU: direct, relay, 5-person group, real recording
+E2E_SFU=1 node run-e2e.mjs     # through the SFU: direct, relay, one-student seat rule, real recording
 E2E_SPLIT=1 node run-e2e.mjs   # same, with Vercel-style split origins
 ```
 
@@ -111,7 +113,7 @@ See [docs/testing.md](docs/testing.md) for what is covered and what still needs 
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Auth, dashboard, meetings, waiting room, 1-to-1 WebRTC, signalling, coturn | ✅ done |
-| 2 | mediasoup SFU, group classes (up to 20), mute/remove/lock, raise hand, grid & speaker layouts | ✅ done |
+| 2 | mediasoup SFU, teacher controls (mute/remove/lock), premium redesign | ✅ done (group features later removed: classes are one-to-one) |
 | 3 | Screen sharing, chat, whiteboard, attendance export, classroom permissions | ✅ done |
 | 4 | Server-side recording (consent), archive & player, invitations, calendar, class history | ✅ done |
 | 5 | Admin dashboard, hardening, monitoring, Capacitor Android/iOS apps | next |
@@ -119,7 +121,7 @@ See [docs/testing.md](docs/testing.md) for what is covered and what still needs 
 
 ## Try it online (test deployment)
 
-GitHub → Render (+ optional Vercel) + MongoDB Atlas: see [docs/deploy-render-vercel.md](docs/deploy-render-vercel.md). TURN, group classes and recording need a small VPS (Render/Vercel have no UDP).
+GitHub → Render (+ optional Vercel) + MongoDB Atlas: see [docs/deploy-render-vercel.md](docs/deploy-render-vercel.md). TURN and recording need a small VPS (Render/Vercel have no UDP).
 
 ## Docs
 
