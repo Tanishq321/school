@@ -12,6 +12,8 @@
 | Meeting codes | 10 random letters (≈47 bits) from `crypto.randomInt`; lookups and joins rate limited per user (40 / 10 min) |
 | Meeting passwords | bcrypt-hashed, never returned; invite links carry an HMAC token instead (rotatable without changing the code) |
 | Room isolation | REST join issues a 2-minute **join token** bound to user + meeting; the socket must belong to the same user; every socket action re-checks membership and host status server-side; signalling is only relayed between two admitted members of the same room |
+| Host controls | mute / mute-all pause the mic producer on the SFU; with self-unmute off the server refuses `resumeProducer` and forces new mic producers paused; removed users are stored on the meeting (REST 403, socket refused); lock returns 423 for newcomers. All checked against the live room, never the client's claim |
+| SFU isolation | `mediasoup:*` events resolve the room from the socket; transport/producer/consumer ids are looked up only in the caller's own peer; one transport per direction, one producer per source |
 | Socket hardening | handshake auth (JWT), zod-validated payloads with size caps, per-socket token-bucket rate limits, 128 KB max message |
 | TURN | coturn REST-API credentials (HMAC-SHA1, default 3 h TTL, refreshed on ICE restart); secret never leaves the server; relaying into private ranges denied; per-user and total quotas |
 | HTTP | Helmet (CSP without inline scripts, nosniff, frame-ancestors none, HSTS via Nginx), Permissions-Policy for camera/mic/display-capture, CORS allow-list, 100 KB JSON limit, `x-powered-by` off |

@@ -3,7 +3,11 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   Copy,
+  GalleryHorizontalEnd,
+  Hand,
   Hourglass,
+  LayoutGrid,
+  Lock,
   Mic,
   MicOff,
   MoreVertical,
@@ -23,7 +27,7 @@ import { MeetingClient } from '../services/meetingClient.js';
 import { useEventState } from '../hooks/useEventState.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useToast } from '../contexts/ToastContext.jsx';
-import { Alert, Button, Field, FullPageSpinner, Logo, Spinner } from '../components/ui/index.jsx';
+import { Alert, Button, Field, FullPageSpinner, Logo, Monogram, Spinner } from '../components/ui/index.jsx';
 import VideoTile, { RemoteAudio } from '../components/meeting/VideoTile.jsx';
 import DeviceSettings, { MicMeter } from '../components/meeting/DeviceSettings.jsx';
 import ParticipantsPanel from '../components/meeting/ParticipantsPanel.jsx';
@@ -87,7 +91,7 @@ export default function MeetingPage() {
   const phase = state?.phase ?? 'idle';
   if (['in-meeting', 'reconnecting'].includes(phase)) return <Room client={client} state={state} media={media} localMedia={localMedia} />;
   if (phase === 'waiting') return <WaitingRoom state={state} media={media} localMedia={localMedia} client={client} meeting={info.meeting} />;
-  if (['ended', 'denied', 'replaced', 'left'].includes(phase)) return <EndScreen phase={phase} reason={state.endedReason} meeting={info.meeting} onRejoin={() => join()} />;
+  if (['ended', 'denied', 'replaced', 'left', 'removed'].includes(phase)) return <EndScreen phase={phase} reason={state.endedReason} meeting={info.meeting} onRejoin={() => join()} />;
   return (
     <PreJoin
       meeting={info.meeting}
@@ -107,8 +111,8 @@ function MeetingError({ error }) {
     <div className="flex min-h-full flex-col items-center justify-center gap-6 p-6 text-center">
       <Logo />
       <div className="max-w-sm">
-        <h1 className="font-display text-2xl font-semibold">Can’t open this class</h1>
-        <p className="mt-2 text-ink-2 dark:text-stone-400">{msg}</p>
+        <h1 className="font-display text-3xl font-normal">Can’t open this class</h1>
+        <p className="mt-2 text-ink-2 dark:text-slate-400">{msg}</p>
       </div>
       <Link to="/">
         <Button variant="secondary">
@@ -169,13 +173,13 @@ function PreJoin({ meeting, media, localMedia, onJoin, joining, error, hasInvite
         <Link to="/" aria-label="Dashboard">
           <Logo />
         </Link>
-        <span className="ml-auto text-sm text-ink-2 dark:text-stone-400">{user.name}</span>
+        <span className="ml-auto text-sm text-ink-2 dark:text-slate-400">{user.name}</span>
       </header>
       <main className="mx-auto grid max-w-6xl items-center gap-8 px-4 pb-10 sm:px-6 lg:min-h-[calc(100vh-4rem)] lg:grid-cols-[1.5fr_1fr]">
         <div className="space-y-3">
           <Preview media={media} localMedia={localMedia} name={user.name} />
           <div className="flex items-center gap-3">
-            <div className="flex flex-1 items-center gap-2 text-xs text-ink-2 dark:text-stone-400">
+            <div className="flex flex-1 items-center gap-2 text-xs text-ink-2 dark:text-slate-400">
               <Mic size={14} />
               <div className="w-32">
                 <MicMeter track={media.audioTrack} enabled={media.audioEnabled} />
@@ -191,9 +195,9 @@ function PreJoin({ meeting, media, localMedia, onJoin, joining, error, hasInvite
 
         <form onSubmit={submit} className="space-y-5 text-center lg:text-left">
           <div>
-            <p className="text-sm font-medium text-brand-600 dark:text-brand-400">{meeting.isHost ? 'Your class' : `Hosted by ${meeting.hostName}`}</p>
-            <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">{meeting.title}</h1>
-            <p className="mt-2 text-sm text-ink-2 dark:text-stone-400">
+            <p className="text-sm text-brand-600 dark:text-brand-300">{meeting.isHost ? 'Your class' : `Hosted by ${meeting.hostName}`}</p>
+            <h1 className="mt-2 font-display text-[2.6rem] leading-tight font-normal">{meeting.title}</h1>
+            <p className="mt-2 text-sm text-ink-2 dark:text-slate-400">
               {meeting.status === 'live' ? 'Class is in progress' : startsLater ? `Scheduled for ${fmtDateTime(meeting.scheduledStart)}` : 'Ready when you are'}
             </p>
           </div>
@@ -210,9 +214,9 @@ function PreJoin({ meeting, media, localMedia, onJoin, joining, error, hasInvite
           )}
           {error && !passwordError && <Alert>{error.message}</Alert>}
           <Button type="submit" size="lg" className="w-full lg:w-auto lg:min-w-48" loading={joining} disabled={needsPassword && !password}>
-            {meeting.isHost ? (meeting.status === 'live' ? 'Rejoin class' : 'Start class') : 'Join class'}
+            {meeting.isHost ? (meeting.status === 'live' ? 'Return to the room' : 'Start class') : 'Join class'}
           </Button>
-          <p className="flex items-center justify-center gap-1.5 text-xs text-ink-2 lg:justify-start dark:text-stone-400">
+          <p className="flex items-center justify-center gap-1.5 text-xs text-ink-2 lg:justify-start dark:text-slate-400">
             <ShieldCheck size={14} /> Audio and video are encrypted in transit.
           </p>
         </form>
@@ -236,7 +240,7 @@ function PreJoin({ meeting, media, localMedia, onJoin, joining, error, hasInvite
   );
 }
 
-function RoundButton({ on, onClick, labelOn, labelOff, IconOn, IconOff, danger }) {
+function RoundButton({ on, onClick, labelOn, labelOff, IconOn, IconOff, danger, locked }) {
   return (
     <button
       type="button"
@@ -244,11 +248,14 @@ function RoundButton({ on, onClick, labelOn, labelOff, IconOn, IconOff, danger }
       aria-pressed={on}
       aria-label={on ? labelOn : labelOff}
       title={on ? labelOn : labelOff}
-      className={`flex size-12 items-center justify-center rounded-full transition active:scale-95 ${
-        danger ? 'bg-danger text-white hover:bg-danger-600' : on ? 'bg-white/15 text-white backdrop-blur hover:bg-white/25' : 'bg-danger text-white hover:bg-danger-600'
-      }`}
+      className={`relative flex size-12 items-center justify-center rounded-full border transition active:scale-95 ${
+        danger || !on
+          ? 'border-danger bg-danger text-vellum hover:bg-danger-600'
+          : 'border-vellum/10 bg-vellum/[0.07] text-vellum backdrop-blur hover:border-brand-400/40 hover:bg-vellum/[0.12]'
+      } ${locked ? 'opacity-70' : ''}`}
     >
-      {on ? <IconOn size={20} /> : <IconOff size={20} />}
+      {on ? <IconOn size={19} strokeWidth={1.6} /> : <IconOff size={19} strokeWidth={1.6} />}
+      {locked && <Lock size={11} className="absolute -right-0.5 -bottom-0.5 rounded-full bg-night p-0.5 text-brand-300" />}
     </button>
   );
 }
@@ -268,10 +275,10 @@ function WaitingRoom({ state, media, localMedia, client, meeting }) {
       <main className="mx-auto grid max-w-5xl items-center gap-8 px-4 py-10 sm:px-6 lg:min-h-full lg:grid-cols-[1.4fr_1fr]">
         <Preview media={media} localMedia={localMedia} name={user.name} />
         <div className="space-y-4 text-center lg:text-left" role="status" aria-live="polite">
-          <Hourglass className="mx-auto animate-pulse text-brand-600 lg:mx-0" size={32} />
-          <h1 className="font-display text-3xl font-semibold">{text[0]}</h1>
-          <p className="text-ink-2 dark:text-stone-400">{text[1]}</p>
-          <p className="text-sm text-ink-2 dark:text-stone-400">{meeting.title}</p>
+          <Hourglass className="mx-auto animate-pulse text-brand-500 lg:mx-0" size={30} strokeWidth={1.4} />
+          <h1 className="font-display text-4xl font-normal">{text[0]}</h1>
+          <p className="text-ink-2 dark:text-slate-400">{text[1]}</p>
+          <p className="text-sm text-ink-2 dark:text-slate-400">{meeting.title}</p>
           <Button
             variant="secondary"
             onClick={async () => {
@@ -294,15 +301,16 @@ function EndScreen({ phase, reason, meeting, onRejoin }) {
     ended: ['The class has ended', reason === 'idle' ? 'It closed after being empty for a while.' : 'The host ended the class for everyone.'],
     denied: ['You weren’t let in', 'The host declined your request to join.'],
     replaced: ['You joined from another device', 'This tab was disconnected because you joined somewhere else.'],
+    removed: ['You were removed from the class', 'The host removed you. You can’t rejoin this class.'],
     left: ['You left the class', ''],
   }[phase];
   return (
     <div className="flex min-h-full flex-col items-center justify-center gap-6 p-6 text-center">
       <Logo />
       <div>
-        <h1 className="font-display text-3xl font-semibold">{content[0]}</h1>
-        {content[1] && <p className="mt-2 text-ink-2 dark:text-stone-400">{content[1]}</p>}
-        <p className="mt-1 text-sm text-ink-2 dark:text-stone-400">{meeting.title}</p>
+        <h1 className="font-display text-4xl font-normal">{content[0]}</h1>
+        {content[1] && <p className="mt-2 text-ink-2 dark:text-slate-400">{content[1]}</p>}
+        <p className="mt-1 text-sm text-ink-2 dark:text-slate-400">{meeting.title}</p>
       </div>
       <div className="flex gap-3">
         {['left', 'replaced'].includes(phase) && (
@@ -329,6 +337,29 @@ function useElapsed(since) {
   return since ? now - new Date(since).getTime() : 0;
 }
 
+function useSize(ref) {
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    if (!ref.current) return undefined;
+    const ro = new ResizeObserver(([e]) => setSize({ width: e.contentRect.width, height: e.contentRect.height }));
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, [ref]);
+  return size;
+}
+
+/** Columns and tile width so every 16:9 tile fits on screen without scrolling (up to ~20 people). */
+function gridGeometry(count, { width, height }, gap = 12) {
+  if (!width || !height) return { cols: 1, tileWidth: 0 };
+  let best = { cols: 1, tileWidth: 0 };
+  for (let cols = 1; cols <= Math.min(count, 6); cols += 1) {
+    const rows = Math.ceil(count / cols);
+    const w = Math.min((width - gap * (cols - 1)) / cols, ((height - gap * (rows - 1)) / rows) * (16 / 9));
+    if (w > best.tileWidth) best = { cols, tileWidth: Math.floor(w) };
+  }
+  return best;
+}
+
 function Room({ client, state, media, localMedia }) {
   const toast = useToast();
   const navigate = useNavigate();
@@ -336,23 +367,45 @@ function Room({ client, state, media, localMedia }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [leaveMenu, setLeaveMenu] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
+  const [layout, setLayout] = useState('grid'); // grid | speaker (used with 2+ others)
+  const [pinned, setPinned] = useState(null);
+  const stageRef = useRef(null);
+  const stage = useSize(stageRef);
   const joinedAt = useRef(Date.now());
   const elapsed = useElapsed(joinedAt.current);
-  const isHost = state.self?.isHost;
+  const self = state.self;
+  const isHost = self?.isHost;
   const remotes = state.participants;
+  const canSpeak = self?.canSpeak !== false;
+  const hands = remotes.filter((p) => p.handRaised).length;
 
   useEffect(() => {
     const onNotice = ({ detail }) => {
-      if (detail.type === 'joined') toast(`${detail.name} joined`);
-      if (detail.type === 'left') toast(`${detail.name} left`);
-      if (detail.type === 'waiting') {
-        toast(`${detail.name} is waiting to join`, { duration: 6000 });
-        setPanel(true);
-      }
+      const msg = {
+        joined: `${detail.name} joined`,
+        left: `${detail.name} left`,
+        waiting: `${detail.name} is waiting to join`,
+        hand: isHost ? `${detail.name} raised a hand` : null,
+        mutedByHost: 'The host muted your microphone',
+        speakGranted: 'The host has invited you to speak',
+        speakRevoked: 'The host has turned your microphone off',
+        unmute_refused: detail.message,
+        mediaError: detail.message,
+      }[detail.type];
+      if (msg) toast(msg, { duration: detail.type === 'waiting' ? 6000 : 4000, tone: detail.type === 'mediaError' ? 'error' : 'info' });
+      if (detail.type === 'waiting') setPanel(true);
     };
     client.addEventListener('notice', onNotice);
     return () => client.removeEventListener('notice', onNotice);
-  }, [client, toast]);
+  }, [client, toast, isHost]);
+
+  const toggleMic = useCallback(() => {
+    if (!media.audioEnabled && !canSpeak) {
+      toast('The host has turned off unmuting. Raise your hand to ask to speak.');
+      return;
+    }
+    localMedia.toggleAudio();
+  }, [media.audioEnabled, canSpeak, localMedia, toast]);
 
   // Keyboard shortcuts: Ctrl/⌘+D mic, Ctrl/⌘+E camera.
   useEffect(() => {
@@ -360,7 +413,7 @@ function Room({ client, state, media, localMedia }) {
       if (!(e.ctrlKey || e.metaKey)) return;
       if (e.key === 'd') {
         e.preventDefault();
-        localMedia.toggleAudio();
+        toggleMic();
       } else if (e.key === 'e') {
         e.preventDefault();
         localMedia.toggleVideo();
@@ -368,7 +421,27 @@ function Room({ client, state, media, localMedia }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [localMedia]);
+  }, [localMedia, toggleMic]);
+
+  // Which layout, and who is in focus.
+  const n = remotes.length;
+  const view = n === 0 ? 'solo' : n === 1 ? 'pair' : layout;
+  const present = (id) => remotes.some((p) => p.userId === id);
+  const focusId =
+    (pinned && present(pinned) && pinned) ||
+    (state.activeSpeaker && present(state.activeSpeaker) && state.activeSpeaker) ||
+    remotes.find((p) => p.isHost)?.userId ||
+    remotes[0]?.userId;
+
+  // Ask the SFU for the simulcast layer each tile actually needs (saves everyone's bandwidth).
+  const remoteIds = remotes.map((p) => p.userId).join(',');
+  useEffect(() => {
+    for (const p of remotes) {
+      const layer = view === 'pair' ? 2 : view === 'speaker' ? (p.userId === focusId ? 2 : 0) : n + 1 <= 4 ? 1 : 0;
+      client.setVideoQuality(p.userId, layer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, view, focusId, remoteIds, n]);
 
   const onBlocked = useCallback(() => setAudioBlocked(true), []);
   const unblockAudio = () => {
@@ -391,7 +464,7 @@ function Room({ client, state, media, localMedia }) {
     try {
       const { meeting } = await api(`/meetings/${client.code}`);
       const link = meeting.inviteUrl || `${window.location.origin}/m/${client.code}`;
-      toast((await copyText(link)) ? 'Invite link copied' : link);
+      toast((await copyText(link)) ? 'Invitation link copied' : link);
     } catch (err) {
       toast(err.message, { tone: 'error' });
     }
@@ -399,7 +472,7 @@ function Room({ client, state, media, localMedia }) {
 
   const localTile = (props) => (
     <VideoTile
-      name={state.self?.name}
+      name={self?.name}
       stream={media.videoTrack ? localMedia.stream : null}
       version={media.videoTrack?.id}
       videoOn={media.videoEnabled}
@@ -407,6 +480,7 @@ function Room({ client, state, media, localMedia }) {
       audioTrack={media.audioTrack}
       isLocal
       isHost={isHost}
+      handRaised={self?.handRaised}
       mirrored={media.facingMode !== 'environment'}
       fit="cover"
       {...props}
@@ -422,6 +496,9 @@ function Room({ client, state, media, localMedia }) {
       audioOn={p.audio}
       audioTrack={p.stream?.getAudioTracks()[0]}
       isHost={p.isHost}
+      handRaised={p.handRaised}
+      pinned={pinned === p.userId}
+      onPin={n > 1 ? () => setPinned((cur) => (cur === p.userId ? null : p.userId)) : undefined}
       reconnecting={p.reconnecting}
       connecting={!p.reconnecting && p.connectionState !== 'connected'}
       quality={p.stats?.quality}
@@ -430,98 +507,143 @@ function Room({ client, state, media, localMedia }) {
   );
 
   const sinkId = media.prefs.audiooutput;
-  const statsFor = remotes[0]?.stats;
+  const network = state.network || remotes[0]?.stats;
+  const grid = gridGeometry(n + 1, stage);
+  const focus = remotes.find((p) => p.userId === focusId);
 
   return (
-    <div className="flex h-dvh flex-col bg-night text-stone-100" data-testid="meeting-room">
+    <div className="dark lamplight flex h-dvh flex-col text-vellum" data-testid="meeting-room" data-layout={view}>
       {remotes.map((p) => (
         <RemoteAudio key={p.userId} stream={p.stream} version={p.streamVersion} sinkId={sinkId} onBlocked={onBlocked} />
       ))}
 
-      <header className="flex h-14 shrink-0 items-center gap-3 px-4">
-        <span className="truncate font-semibold">{state.meeting?.title}</span>
-        <span className="hidden font-mono text-sm text-stone-400 sm:inline">{client.code}</span>
-        <span className="ml-auto flex items-center gap-3 text-sm text-stone-400">
-          <ConnectionBadge phase={state.phase} stats={statsFor} />
+      <header className="flex h-16 shrink-0 items-center gap-4 px-5">
+        <Monogram size={28} className="hidden sm:block" />
+        <span className="truncate font-display text-xl font-normal">{state.meeting?.title}</span>
+        {state.meeting?.locked && <Lock size={15} strokeWidth={1.6} className="shrink-0 text-brand-300" aria-label="Room locked" />}
+        <span className="hidden text-sm tracking-[0.08em] text-slate-400 tabular-nums sm:inline">{client.code}</span>
+        <span className="ml-auto flex items-center gap-4 text-sm text-slate-400">
+          <ConnectionBadge phase={state.phase} stats={network} />
           <span className="tabular-nums">{fmtClock(elapsed)}</span>
         </span>
       </header>
 
       {state.phase === 'reconnecting' && (
-        <div className="mx-4 mb-2 rounded-xl bg-saffron/15 px-4 py-2 text-center text-sm text-amber-200" role="status">
+        <div className="mx-5 mb-2 rounded-full bg-brand-300/15 px-4 py-2 text-center text-sm text-brand-100" role="status">
           Connection lost. Reconnecting…
         </div>
       )}
       {audioBlocked && (
-        <button onClick={unblockAudio} className="mx-4 mb-2 flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold">
+        <button onClick={unblockAudio} className="mx-5 mb-2 flex items-center justify-center gap-2 rounded-full bg-vellum px-4 py-2 text-sm font-semibold text-ink">
           <Volume2 size={16} /> Click to turn on sound
         </button>
       )}
 
-      <div className="flex min-h-0 flex-1 gap-3 px-3 pb-3">
-        <div className="relative min-w-0 flex-1">
-          {remotes.length === 0 ? (
+      <div className="flex min-h-0 flex-1 gap-3 px-3 pb-3 sm:px-5">
+        <div ref={stageRef} className="relative min-w-0 flex-1">
+          {view === 'solo' && (
             <div className="grid h-full place-items-center">
-              <div className="w-full max-w-3xl space-y-4">
+              <div className="w-full max-w-3xl space-y-6">
                 {localTile({ className: 'aspect-video w-full' })}
-                <div className="flex flex-col items-center gap-3 text-center">
-                  <p className="text-stone-300">{isHost ? 'You’re the only one here. Share the invite to bring students in.' : 'Waiting for others to join…'}</p>
+                <div className="flex flex-col items-center gap-4 text-center">
+                  <p className="font-display text-2xl font-normal text-vellum/90">{isHost ? 'The room is ready.' : 'Waiting for others to join.'}</p>
                   {isHost && (
-                    <Button variant="secondary" onClick={copyInvite} className="!border-night-line !bg-night-3 !text-stone-100">
-                      <Copy size={16} /> Copy invite link
+                    <Button variant="secondary" onClick={copyInvite} className="!border-night-line !bg-night-3/70 !text-vellum">
+                      <Copy size={16} strokeWidth={1.6} /> Copy invitation link
                     </Button>
                   )}
                 </div>
               </div>
             </div>
-          ) : remotes.length === 1 ? (
+          )}
+
+          {view === 'pair' && (
             <>
               {remoteTile(remotes[0], { className: 'h-full w-full' })}
-              <div className="absolute right-3 bottom-3 w-32 sm:w-56">{localTile({ className: 'aspect-[3/4] w-full shadow-2xl sm:aspect-video', compact: true })}</div>
+              <div className="absolute right-4 bottom-4 w-32 sm:w-60">{localTile({ className: 'aspect-[3/4] w-full shadow-2xl sm:aspect-video', compact: true })}</div>
             </>
-          ) : (
-            <div className={`grid h-full gap-3 ${remotes.length + 1 <= 4 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-2 lg:grid-cols-3'} auto-rows-fr`}>
-              {localTile({ className: 'h-full w-full', compact: true })}
-              {remotes.map((p) => remoteTile(p, { className: 'h-full w-full', compact: true, fit: 'cover' }))}
+          )}
+
+          {view === 'grid' && (
+            <div className="flex h-full items-center justify-center">
+              {/* Flex-wrap (not CSS grid) so an incomplete last row sits centred. */}
+              <div className="flex flex-wrap content-center justify-center gap-3" style={{ maxWidth: grid.cols * grid.tileWidth + (grid.cols - 1) * 12 }} data-testid="grid">
+                {localTile({ className: 'aspect-video', compact: n + 1 > 4, style: { width: grid.tileWidth } })}
+                {remotes.map((p) => remoteTile(p, { className: 'aspect-video', compact: n + 1 > 4, fit: 'cover', style: { width: grid.tileWidth } }))}
+              </div>
+            </div>
+          )}
+
+          {view === 'speaker' && focus && (
+            <div className="flex h-full flex-col gap-3">
+              <div className="min-h-0 flex-1">{remoteTile(focus, { className: 'h-full w-full' })}</div>
+              <div className="flex shrink-0 gap-3 overflow-x-auto pb-1" data-testid="filmstrip">
+                {localTile({ className: 'aspect-video w-40 shrink-0 sm:w-48', compact: true })}
+                {remotes.filter((p) => p.userId !== focusId).map((p) => remoteTile(p, { className: 'aspect-video w-40 shrink-0 sm:w-48', compact: true, fit: 'cover' }))}
+              </div>
             </div>
           )}
         </div>
         {panel && (
           <div className="fixed inset-0 z-40 md:static md:z-auto">
             <ParticipantsPanel
-              self={state.self ? { ...state.self, audio: media.audioEnabled, video: media.videoEnabled } : null}
+              client={client}
+              state={state}
+              self={self ? { ...self, audio: media.audioEnabled, video: media.videoEnabled } : null}
               participants={remotes}
               waiting={state.waiting}
               isHost={isHost}
-              onAdmit={(id) => client.admit(id).catch((e) => toast(e.message, { tone: 'error' }))}
-              onDeny={(id) => client.deny(id).catch((e) => toast(e.message, { tone: 'error' }))}
               onClose={() => setPanel(false)}
+              toastError={(m) => toast(m, { tone: 'error' })}
             />
           </div>
         )}
       </div>
 
-      <footer className="flex shrink-0 items-center justify-center gap-2 px-3 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))] sm:gap-3">
-        <RoundButton on={media.audioEnabled} onClick={() => localMedia.toggleAudio()} labelOn="Mute (Ctrl+D)" labelOff="Unmute (Ctrl+D)" IconOn={Mic} IconOff={MicOff} />
+      <footer className="flex shrink-0 items-center justify-center gap-2 px-3 pt-1 pb-[max(1.1rem,env(safe-area-inset-bottom))] sm:gap-3">
+        <RoundButton
+          on={media.audioEnabled}
+          onClick={toggleMic}
+          labelOn="Mute (Ctrl+D)"
+          labelOff={canSpeak ? 'Unmute (Ctrl+D)' : 'Unmuting is off. Raise your hand to speak'}
+          IconOn={Mic}
+          IconOff={MicOff}
+          locked={!canSpeak && !media.audioEnabled}
+        />
         <RoundButton on={media.videoEnabled} onClick={() => localMedia.toggleVideo()} labelOn="Turn off camera (Ctrl+E)" labelOff="Turn on camera (Ctrl+E)" IconOn={Video} IconOff={VideoOff} />
         {media.canSwitchCamera && media.videoEnabled && <ToolButton onClick={() => localMedia.switchCamera()} label="Switch camera" Icon={SwitchCamera} />}
-        <ToolButton onClick={() => setPanel((v) => !v)} label="People" Icon={Users} active={panel} badge={isHost ? state.waiting.length : 0} />
+        {!isHost && (
+          <ToolButton
+            onClick={() => client.raiseHand(!self?.handRaised).catch((e) => toast(e.message, { tone: 'error' }))}
+            label={self?.handRaised ? 'Lower hand' : 'Raise hand'}
+            Icon={Hand}
+            active={self?.handRaised}
+          />
+        )}
+        {n >= 2 && (
+          <ToolButton
+            onClick={() => setLayout((l) => (l === 'grid' ? 'speaker' : 'grid'))}
+            label={layout === 'grid' ? 'Speaker view' : 'Grid view'}
+            Icon={layout === 'grid' ? GalleryHorizontalEnd : LayoutGrid}
+          />
+        )}
+        <ToolButton onClick={() => setPanel((v) => !v)} label="People" Icon={Users} active={panel} badge={isHost ? state.waiting.length + hands : 0} />
         <ToolButton onClick={() => setSettingsOpen(true)} label="Settings" Icon={Settings} />
         <div className="relative">
           <button
             onClick={() => (isHost ? setLeaveMenu((v) => !v) : leave())}
-            className="flex h-12 items-center gap-2 rounded-full bg-danger px-5 font-semibold text-white transition hover:bg-danger-600 active:scale-95"
+            className="flex h-12 items-center gap-2 rounded-full bg-danger px-6 font-medium text-vellum transition hover:bg-danger-600 active:scale-95"
             aria-label="Leave class"
             aria-haspopup={isHost ? 'menu' : undefined}
           >
-            <PhoneOff size={20} /> <span className="hidden sm:inline">Leave</span>
+            <PhoneOff size={19} strokeWidth={1.7} /> <span className="hidden sm:inline">Leave</span>
             {isHost && <MoreVertical size={16} className="-mr-2 opacity-70" />}
           </button>
           {leaveMenu && (
-            <div role="menu" className="absolute right-0 bottom-14 w-56 overflow-hidden rounded-xl border border-night-line bg-night-2 shadow-2xl">
+            <div role="menu" className="absolute right-0 bottom-14 w-60 overflow-hidden rounded-2xl border border-night-line bg-night-2 shadow-2xl">
               <button role="menuitem" onClick={leave} className="block w-full px-4 py-3 text-left text-sm hover:bg-night-3">
-                Leave class
-                <span className="block text-xs text-stone-400">Students can stay</span>
+                Leave the class
+                <span className="block text-xs text-slate-400">Students can stay in the room</span>
               </button>
               <button role="menuitem" onClick={endForAll} className="block w-full px-4 py-3 text-left text-sm text-red-300 hover:bg-night-3">
                 End class for everyone
@@ -543,20 +665,22 @@ function ToolButton({ onClick, label, Icon, active, badge }) {
       aria-label={label}
       title={label}
       aria-pressed={active}
-      className={`relative flex size-12 items-center justify-center rounded-full transition active:scale-95 ${active ? 'bg-brand-600 text-white' : 'bg-white/10 text-white hover:bg-white/20'}`}
+      className={`relative flex size-12 items-center justify-center rounded-full border transition active:scale-95 ${
+        active ? 'border-brand-300 bg-brand-300 text-ink' : 'border-vellum/10 bg-vellum/[0.07] text-vellum backdrop-blur hover:border-brand-400/40 hover:bg-vellum/[0.12]'
+      }`}
     >
-      <Icon size={20} />
-      {badge > 0 && <span className="absolute -top-1 -right-1 flex size-5 items-center justify-center rounded-full bg-saffron text-[11px] font-bold text-ink">{badge}</span>}
+      <Icon size={19} strokeWidth={1.6} />
+      {badge > 0 && <span className="absolute -top-1 -right-1 flex size-5 items-center justify-center rounded-full bg-brand-300 text-[11px] font-bold text-ink">{badge}</span>}
     </button>
   );
 }
 
 function ConnectionBadge({ phase, stats }) {
   const label = useMemo(() => {
-    if (phase === 'reconnecting') return { text: 'Reconnecting', cls: 'bg-saffron' };
+    if (phase === 'reconnecting') return { text: 'Reconnecting', cls: 'bg-brand-300' };
     if (!stats) return null;
-    const q = { good: ['Good', 'bg-brand-400'], fair: ['Fair', 'bg-saffron'], poor: ['Poor', 'bg-danger'] }[stats.quality];
-    return { text: `${q[0]}${stats.relayed ? ' · relayed' : ''}`, cls: q[1], title: `RTT ${stats.rttMs ?? '?'} ms · loss ${stats.lossPct}%${stats.video ? ` · ${stats.video.width}×${stats.video.height}@${Math.round(stats.video.fps || 0)}` : ''}` };
+    const q = { good: ['Good', 'bg-emerald-400'], fair: ['Fair', 'bg-brand-300'], poor: ['Poor', 'bg-danger'] }[stats.quality];
+    return { text: `${q[0]}${stats.relayed ? ', relayed' : ''}`, cls: q[1], title: `Round trip ${stats.rttMs ?? '?'} ms, packet loss ${stats.lossPct}%${stats.video ? `, ${stats.video.width}×${stats.video.height} at ${Math.round(stats.video.fps || 0)} fps` : ''}` };
   }, [phase, stats]);
   if (!label) return null;
   return (

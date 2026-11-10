@@ -126,7 +126,7 @@ export default function DiagnosticsPage() {
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="font-display text-3xl font-semibold">Connection test</h1>
-      <p className="mt-2 text-ink-2 dark:text-stone-400">Checks your browser, devices and whether calls can get through your network, including via our relay server.</p>
+      <p className="mt-2 text-ink-2 dark:text-slate-400">Checks your browser, devices and whether calls can get through your network, including via our relay server.</p>
       <Button className="mt-6" onClick={run} loading={running}>
         <Play size={16} /> {results.length ? 'Run again' : 'Run test'}
       </Button>
@@ -136,7 +136,7 @@ export default function DiagnosticsPage() {
             {r.status === 'pass' ? <CheckCircle2 className="shrink-0 text-brand-500" /> : r.status === 'warn' ? <CircleAlert className="shrink-0 text-saffron" /> : <CircleX className="shrink-0 text-danger" />}
             <div className="min-w-0">
               <p className="font-medium">{r.name}</p>
-              <p className="text-sm break-words text-ink-2 dark:text-stone-400">{r.detail}</p>
+              <p className="text-sm break-words text-ink-2 dark:text-slate-400">{r.detail}</p>
             </div>
           </li>
         ))}

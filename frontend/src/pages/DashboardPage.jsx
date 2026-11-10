@@ -63,84 +63,88 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-14">
       {needsVerification && <VerifyBanner />}
 
-      <section className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-        <div className="card relative overflow-hidden p-6 sm:p-8">
-          <div className="pointer-events-none absolute -top-16 -right-16 size-56 rounded-full bg-brand-500/10 blur-2xl" />
-          <p className="text-sm font-medium text-brand-600 dark:text-brand-400">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-          <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight sm:text-4xl">
-            {greeting}, {user.name.split(' ')[0]}
+      <section className="grid items-end gap-10 lg:grid-cols-[1.35fr_1fr]">
+        <div>
+          <p className="text-sm text-ink-2 dark:text-slate-400">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+          <h1 className="animate-reveal mt-3 font-display text-[3.2rem] leading-[1.02] font-normal sm:text-[4.2rem]">
+            {greeting},<br />
+            {user.name.split(' ')[0]}.
           </h1>
-          <p className="mt-2 max-w-md text-ink-2 dark:text-stone-400">
-            {isHostRole ? 'Start a class now, or schedule one and share the link with your students.' : 'Enter the code or link your teacher shared to join a class.'}
+          <p className="mt-5 max-w-md text-[17px] text-ink-2 dark:text-slate-400">
+            {isHostRole ? 'Open a room now, or set a time and send the invitation.' : 'Enter the code or link your teacher sent you.'}
           </p>
           {isHostRole && (
-            <div className="mt-6 flex flex-wrap gap-3">
+            <div className="mt-8 flex flex-wrap gap-3">
               <Button size="lg" onClick={startInstant} loading={creating} disabled={needsVerification}>
-                <Video size={18} /> New meeting
+                <Video size={18} strokeWidth={1.6} /> Open a room now
               </Button>
               <Button size="lg" variant="secondary" onClick={() => setScheduleOpen(true)} disabled={needsVerification}>
-                <CalendarPlus size={18} /> Schedule class
+                <CalendarPlus size={18} strokeWidth={1.6} /> Schedule a class
               </Button>
             </div>
           )}
         </div>
 
-        <form onSubmit={joinByCode} className="card flex flex-col justify-center gap-3 p-6 sm:p-8">
-          <h2 className="font-display text-xl font-semibold">Join a class</h2>
-          <Field
-            placeholder="abc-defg-hij or invite link"
-            aria-label="Meeting code or link"
-            value={code}
-            onChange={(e) => {
-              setCode(e.target.value);
-              setCodeError(null);
-            }}
-            error={codeError}
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-          <Button type="submit" disabled={!code.trim() || needsVerification}>
-            <LogIn size={17} /> Join
-          </Button>
+        <form onSubmit={joinByCode} className="card p-6 sm:p-7">
+          <h2 className="font-display text-2xl font-normal">Join a class</h2>
+          <p className="mt-1 mb-5 text-sm text-ink-2 dark:text-slate-400">Paste the invitation link or type the code.</p>
+          <div className="flex gap-2">
+            <Field
+              className="flex-1"
+              placeholder="abc-defg-hij"
+              aria-label="Meeting code or link"
+              value={code}
+              onChange={(e) => {
+                setCode(e.target.value);
+                setCodeError(null);
+              }}
+              error={codeError}
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            <Button type="submit" disabled={!code.trim() || needsVerification} className="h-[46px]" aria-label="Join">
+              <LogIn size={17} strokeWidth={1.6} />
+            </Button>
+          </div>
         </form>
       </section>
 
+      <div className="hairline" />
+
       <section>
-        <div className="mb-4 flex items-end justify-between">
-          <h2 className="font-display text-2xl font-semibold">Upcoming</h2>
-        </div>
+        <h2 className="mb-6 font-display text-3xl font-normal">Upcoming</h2>
         {upcoming.loading ? (
           <Spinner />
         ) : upcoming.error ? (
           <Alert>{upcoming.error}</Alert>
         ) : upcoming.meetings.length === 0 ? (
-          <Empty text={isHostRole ? 'No classes scheduled. Start or schedule one above.' : 'Classes you join will appear here.'} />
+          <Empty text={isHostRole ? 'Nothing on the calendar. Open a room or schedule a class.' : 'Classes you join will appear here.'} />
         ) : (
-          <ul className="grid gap-3 md:grid-cols-2">
+          <ol className="divide-y divide-line/80 border-y border-line/80 dark:divide-night-line dark:border-night-line">
             {upcoming.meetings.map((m) => (
               <MeetingCard key={m.code} meeting={m} onChanged={upcoming.reload} />
             ))}
-          </ul>
+          </ol>
         )}
       </section>
 
       <section>
-        <h2 className="mb-4 font-display text-2xl font-semibold">Recent</h2>
+        <h2 className="mb-6 font-display text-3xl font-normal">Recent</h2>
         {past.loading ? (
           <Spinner />
         ) : past.meetings.length === 0 ? (
           <Empty text="Finished classes will appear here." />
         ) : (
-          <div className="card divide-y divide-line overflow-hidden dark:divide-night-line">
+          <div className="divide-y divide-line/80 border-y border-line/80 dark:divide-night-line dark:border-night-line">
             {past.meetings.slice(0, 15).map((m) => (
-              <div key={m.code} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3.5">
+              <div key={m.code} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-4">
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{m.title}</p>
-                  <p className="text-xs text-ink-2 dark:text-stone-400">
+                  <p className="text-xs text-ink-2 dark:text-slate-400">
                     {fmtDateTime(m.startedAt || m.scheduledStart)}
                     {m.startedAt && m.endedAt && ` · ${fmtDuration((new Date(m.endedAt) - new Date(m.startedAt)) / 1000)}`}
                     {!m.isHost && m.hostName && ` · with ${m.hostName}`}
@@ -164,7 +168,7 @@ export default function DashboardPage() {
         onCreated={(m) => {
           setScheduleOpen(false);
           upcoming.reload();
-          copyText(m.inviteUrl).then((ok) => toast(ok ? 'Class scheduled. Invite link copied.' : 'Class scheduled.', { tone: 'success' }));
+          copyText(m.inviteUrl).then((ok) => toast(ok ? 'Class scheduled. Invitation link copied.' : 'Class scheduled.', { tone: 'success' }));
         }}
       />
       <AttendanceModal meeting={attendanceFor} onClose={() => setAttendanceFor(null)} />
@@ -202,15 +206,15 @@ function VerifyBanner() {
   );
 }
 
-const Empty = ({ text }) => <div className="rounded-2xl border border-dashed border-line px-6 py-10 text-center text-sm text-ink-2 dark:border-night-line dark:text-stone-400">{text}</div>;
+const Empty = ({ text }) => <p className="border-y border-line/80 py-10 text-ink-2 dark:border-night-line dark:text-slate-400">{text}</p>;
 
 export function StatusBadge({ status }) {
   const map = {
-    live: 'bg-danger/10 text-danger',
-    scheduled: 'bg-brand-600/10 text-brand-700 dark:text-brand-100',
-    ended: 'bg-stone-500/10 text-ink-2 dark:text-stone-300',
-    cancelled: 'bg-stone-500/10 text-ink-2 dark:text-stone-400',
-    expired: 'bg-stone-500/10 text-ink-2 dark:text-stone-400',
+    live: 'bg-danger/10 text-danger dark:text-red-300',
+    scheduled: 'bg-brand-400/15 text-brand-700 dark:text-brand-300',
+    ended: 'bg-slate-500/10 text-ink-2 dark:text-slate-300',
+    cancelled: 'bg-slate-500/10 text-ink-2 dark:text-slate-400',
+    expired: 'bg-slate-500/10 text-ink-2 dark:text-slate-400',
   };
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${map[status]}`}>
@@ -224,6 +228,8 @@ function MeetingCard({ meeting: m, onChanged }) {
   const navigate = useNavigate();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const start = new Date(m.scheduledStart);
+  const today = start.toDateString() === new Date().toDateString();
   const cancel = async () => {
     if (!window.confirm(`Cancel “${m.title}”? People with the link won't be able to join.`)) return;
     setBusy(true);
@@ -237,46 +243,51 @@ function MeetingCard({ meeting: m, onChanged }) {
     }
   };
   return (
-    <li className="card flex flex-col gap-4 p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-lg font-semibold">{m.title}</p>
-          <p className="text-sm text-ink-2 dark:text-stone-400">
-            {fmtDateTime(m.scheduledStart)} · {m.durationMinutes} min
-          </p>
+    <li className="grid grid-cols-[5.5rem_1fr] items-center gap-x-6 gap-y-3 py-6 sm:grid-cols-[7rem_1fr_auto]">
+      <div className="leading-none">
+        <p className="font-display text-[1.9rem] font-normal tabular-nums">{start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).replace(/\s?[AP]M$/i, '')}</p>
+        <p className="mt-1.5 text-xs text-ink-2 dark:text-slate-400">
+          {start.toLocaleTimeString(undefined, { hour: 'numeric' }).match(/[AP]M/i)?.[0]} {today ? 'today' : start.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+        </p>
+      </div>
+      <div className="min-w-0">
+        <div className="flex items-center gap-3">
+          <p className="truncate text-lg font-medium">{m.title}</p>
+          {m.status === 'live' && <StatusBadge status="live" />}
         </div>
-        <StatusBadge status={m.status} />
+        <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-ink-2 dark:text-slate-400">
+          <span>{m.durationMinutes} minutes</span>
+          <span className="tracking-[0.08em] tabular-nums">{m.code}</span>
+          {m.settings?.hasPassword && (
+            <span className="inline-flex items-center gap-1">
+              <KeyRound size={13} strokeWidth={1.6} /> Password
+            </span>
+          )}
+          {m.settings?.waitingRoom && (
+            <span className="inline-flex items-center gap-1">
+              <Lock size={13} strokeWidth={1.6} /> Waiting room
+            </span>
+          )}
+          {m.status === 'live' && m.liveParticipants > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <Users size={13} strokeWidth={1.6} /> {m.liveParticipants} in the room
+            </span>
+          )}
+          {!m.isHost && m.hostName && <span>with {m.hostName}</span>}
+        </p>
       </div>
-      <div className="flex flex-wrap items-center gap-2 text-xs text-ink-2 dark:text-stone-400">
-        <span className="rounded-lg bg-paper-2 px-2 py-1 font-mono dark:bg-night-3">{m.code}</span>
-        {m.settings?.hasPassword && (
-          <span className="inline-flex items-center gap-1">
-            <KeyRound size={13} /> Password
-          </span>
-        )}
-        {m.settings?.waitingRoom && (
-          <span className="inline-flex items-center gap-1">
-            <Lock size={13} /> Waiting room
-          </span>
-        )}
-        {m.status === 'live' && m.liveParticipants > 0 && (
-          <span className="inline-flex items-center gap-1">
-            <Users size={13} /> {m.liveParticipants} in class
-          </span>
-        )}
-      </div>
-      <div className="mt-auto flex flex-wrap gap-2">
+      <div className="col-span-2 flex flex-wrap gap-2 sm:col-span-1 sm:justify-end">
         <Button size="sm" onClick={() => navigate(`/m/${m.code}`)}>
-          <Video size={15} /> {m.isHost ? (m.status === 'live' ? 'Rejoin' : 'Start') : 'Join'}
+          {m.isHost ? (m.status === 'live' ? 'Return to room' : 'Open room') : 'Join'}
         </Button>
         {m.isHost && (
           <>
-            <Button size="sm" variant="secondary" onClick={() => copyText(m.inviteUrl).then((ok) => toast(ok ? 'Invite link copied' : m.inviteUrl))}>
-              <Copy size={15} /> Copy invite
+            <Button size="sm" variant="secondary" onClick={() => copyText(m.inviteUrl).then((ok) => toast(ok ? 'Invitation link copied' : m.inviteUrl))}>
+              <Copy size={14} strokeWidth={1.6} /> Invitation
             </Button>
             {m.status !== 'live' && (
               <Button size="sm" variant="ghost" onClick={cancel} loading={busy} aria-label="Cancel class">
-                <Trash2 size={15} />
+                <Trash2 size={14} strokeWidth={1.6} />
               </Button>
             )}
           </>
@@ -326,7 +337,7 @@ function ScheduleModal({ open, onClose, onCreated }) {
     <Modal open={open} onClose={onClose} title="Schedule a class">
       <form onSubmit={submit} className="space-y-4">
         {state.error && <Alert>{state.error}</Alert>}
-        <Field label="Title" placeholder="e.g. Grade 10 Maths: Quadratics" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} maxLength={120} />
+        <Field label="Title" placeholder="e.g. Organic chemistry, session 4" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} maxLength={120} />
         <div className="grid grid-cols-[1fr_auto] gap-3">
           <Field label="Starts" type="datetime-local" required value={form.start} onChange={(e) => setForm({ ...form, start: e.target.value })} />
           <Field label="Minutes" type="number" min={5} max={600} step={5} required value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} className="w-24" />
@@ -366,7 +377,7 @@ function AttendanceModal({ meeting, onClose }) {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="text-xs tracking-wide text-ink-2 uppercase dark:text-stone-400">
+            <thead className="text-xs tracking-wide text-ink-2 uppercase dark:text-slate-400">
               <tr>
                 <th className="py-2 pr-4">Name</th>
                 <th className="py-2 pr-4">First joined</th>

@@ -2,17 +2,20 @@ import { useEffect, useId, useRef } from 'react';
 import { AlertCircle, CheckCircle2, Info, Loader2, X } from 'lucide-react';
 
 const BTN = {
-  primary: 'bg-brand-600 text-white hover:bg-brand-700 shadow-sm shadow-brand-900/10',
-  secondary: 'border border-line bg-white text-ink hover:bg-paper-2 dark:border-night-line dark:bg-night-3 dark:text-stone-100 dark:hover:bg-night-line',
-  ghost: 'text-ink-2 hover:bg-paper-2 hover:text-ink dark:text-stone-300 dark:hover:bg-night-3 dark:hover:text-white',
-  danger: 'bg-danger text-white hover:bg-danger-600',
+  // Brushed brass: the product's one metallic accent, used for the primary action only.
+  primary:
+    'bg-[linear-gradient(180deg,#a8864f_0%,#86663a_100%)] text-vellum shadow-[inset_0_1px_0_rgba(255,240,210,.35),0_10px_24px_-14px_rgba(110,83,44,.9)] hover:brightness-110',
+  secondary:
+    'border border-line bg-white/70 text-ink hover:border-brand-400/60 hover:bg-white dark:border-night-line dark:bg-night-3/70 dark:text-vellum dark:hover:border-brand-500/50',
+  ghost: 'text-ink-2 hover:bg-paper-2 hover:text-ink dark:text-slate-300 dark:hover:bg-night-3 dark:hover:text-white',
+  danger: 'bg-danger text-vellum hover:bg-danger-600',
 };
 
 export function Button({ variant = 'primary', size = 'md', loading, className = '', children, disabled, ...props }) {
-  const sz = size === 'lg' ? 'h-12 px-6 text-[15px]' : size === 'sm' ? 'h-8 px-3 text-sm' : 'h-10 px-4 text-sm';
+  const sz = size === 'lg' ? 'h-12 px-7 text-[15px]' : size === 'sm' ? 'h-8 px-3.5 text-[13px]' : 'h-10 px-5 text-sm';
   return (
     <button
-      className={`inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition active:scale-[.98] disabled:pointer-events-none disabled:opacity-50 ${sz} ${BTN[variant]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-full font-medium tracking-[0.01em] transition duration-200 active:scale-[.98] disabled:pointer-events-none disabled:opacity-50 ${sz} ${BTN[variant]} ${className}`}
       disabled={disabled || loading}
       {...props}
     >
@@ -33,7 +36,7 @@ export function Field({ label, error, hint, className = '', ...props }) {
       )}
       <input id={id} className="input" aria-invalid={Boolean(error)} aria-describedby={error || hint ? `${id}-msg` : undefined} {...props} />
       {(error || hint) && (
-        <p id={`${id}-msg`} className={`mt-1.5 text-xs ${error ? 'text-danger' : 'text-ink-2 dark:text-stone-400'}`}>
+        <p id={`${id}-msg`} className={`mt-1.5 text-xs ${error ? 'text-danger' : 'text-ink-2 dark:text-slate-400'}`}>
           {error || hint}
         </p>
       )}
@@ -66,11 +69,11 @@ export function Toggle({ checked, onChange, label, description }) {
     <label className="flex cursor-pointer items-start justify-between gap-4">
       <span>
         <span className="block text-sm font-medium">{label}</span>
-        {description && <span className="block text-xs text-ink-2 dark:text-stone-400">{description}</span>}
+        {description && <span className="block text-xs text-ink-2 dark:text-slate-400">{description}</span>}
       </span>
       <span className="relative mt-0.5 inline-flex shrink-0">
         <input type="checkbox" className="peer sr-only" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-        <span className="h-6 w-11 rounded-full bg-stone-300 transition peer-checked:bg-brand-600 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 dark:bg-night-line" />
+        <span className="h-6 w-11 rounded-full bg-line transition peer-checked:bg-brand-500 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-400 dark:bg-night-line dark:peer-checked:bg-brand-500" />
         <span className="absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" />
       </span>
     </label>
@@ -97,22 +100,38 @@ export const Spinner = ({ size = 20, className = '' }) => <Loader2 size={size} c
 
 export function FullPageSpinner({ label = 'Loading…' }) {
   return (
-    <div className="flex h-full min-h-[50vh] flex-col items-center justify-center gap-3 text-ink-2 dark:text-stone-400">
+    <div className="flex h-full min-h-[50vh] flex-col items-center justify-center gap-3 text-ink-2 dark:text-slate-400">
       <Spinner size={28} />
       <span className="text-sm">{label}</span>
     </div>
   );
 }
 
+/** Monogram: a Bodoni "K" set in an engraved brass ring. */
+export function Monogram({ size = 34, className = '' }) {
+  return (
+    <svg viewBox="0 0 40 40" width={size} height={size} className={className} aria-hidden="true">
+      <defs>
+        <linearGradient id="brass" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#e6cf9f" />
+          <stop offset=".5" stopColor="#b48d55" />
+          <stop offset="1" stopColor="#7a5c31" />
+        </linearGradient>
+      </defs>
+      <circle cx="20" cy="20" r="18.5" fill="none" stroke="url(#brass)" strokeWidth="1.1" />
+      <circle cx="20" cy="20" r="15.6" fill="none" stroke="url(#brass)" strokeWidth=".4" opacity=".7" />
+      <text x="20" y="27.2" textAnchor="middle" fontFamily="Bodoni Moda Variable, Didot, serif" fontSize="21" fontWeight="500" fill="url(#brass)">
+        K
+      </text>
+    </svg>
+  );
+}
+
 export function Logo({ className = '' }) {
   return (
-    <span className={`inline-flex items-center gap-2 ${className}`}>
-      <svg viewBox="0 0 32 32" className="size-8" aria-hidden="true">
-        <rect width="32" height="32" rx="9" fill="#0f766e" />
-        <path d="M9 10h9a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H9a1 1 0 0 1-1-1V11a1 1 0 0 1 1-1z" fill="#f5f1e8" />
-        <path d="M21 14.5l4-2.5v8l-4-2.5z" fill="#f5b942" />
-      </svg>
-      <span className="font-display text-xl font-semibold tracking-tight">{import.meta.env.VITE_APP_NAME || 'Kaksha'}</span>
+    <span className={`inline-flex items-center gap-2.5 ${className}`}>
+      <Monogram />
+      <span className="font-display text-[22px] font-medium tracking-tight">{import.meta.env.VITE_APP_NAME || 'Kaksha'}</span>
     </span>
   );
 }
@@ -138,10 +157,10 @@ export function Modal({ open, onClose, title, children, wide }) {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`animate-fade-up max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-line bg-white p-5 shadow-2xl sm:rounded-2xl dark:border-night-line dark:bg-night-2 ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'}`}
+        className={`animate-fade-up max-h-[92vh] w-full overflow-y-auto rounded-t-[26px] border border-line bg-paper p-6 shadow-2xl sm:rounded-[26px] dark:border-night-line dark:bg-night-2 ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'}`}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-display text-xl font-semibold">{title}</h2>
+          <h2 className="font-display text-2xl font-medium">{title}</h2>
           <button onClick={onClose} className="rounded-lg p-1.5 text-ink-2 hover:bg-paper-2 dark:hover:bg-night-3" aria-label="Close">
             <X size={18} />
           </button>
@@ -162,8 +181,8 @@ export function Avatar({ name = '?', size = 40, className = '' }) {
   const hue = [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
   return (
     <span
-      className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${className}`}
-      style={{ width: size, height: size, fontSize: size * 0.38, background: `oklch(0.55 0.09 ${hue})` }}
+      className={`inline-flex shrink-0 items-center justify-center rounded-full font-display font-medium text-vellum ${className}`}
+      style={{ width: size, height: size, fontSize: size * 0.36, background: `linear-gradient(145deg, oklch(0.48 0.06 ${hue}), oklch(0.32 0.05 ${hue}))`, boxShadow: 'inset 0 0 0 1px rgba(216,190,140,.35)' }}
       aria-hidden="true"
     >
       {initials || '?'}

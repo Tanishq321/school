@@ -1,6 +1,7 @@
 import { io } from 'socket.io-client';
 import { api, freshAccessToken, SOCKET_URL } from './api.js';
 import { P2PPeer } from './p2pPeer.js';
+import { SfuSession } from './sfuSession.js';
 
 /**
  * Orchestrates one meeting session: REST join → Socket.IO admission → P2P peers.
@@ -27,7 +28,11 @@ export class MeetingClient extends EventTarget {
       error: null,
       signalling: 'disconnected',
       endedReason: null,
+      mediaMode: null, // 'sfu' | 'p2p'
+      activeSpeaker: null,
+      network: null,
     };
+    this.sfu = null;
     this._onLocalTrack = (e) => this._broadcastTrack(e.detail.kind, e.detail.track);
     this._onLocalChange = () => this._sendMediaState();
     localMedia.addEventListener('track', this._onLocalTrack);
@@ -123,6 +128,32 @@ export class MeetingClient extends EventTarget {
     socket.on('meeting:replaced', () => this._terminate('replaced'));
     socket.on('meeting:ended', ({ reason }) => this._terminate('ended', reason));
     socket.on('meeting:force-leave', () => this.leave());
+    socket.on('meeting:removed', () => this._terminate('removed'));
+    socket.on('meeting:locked', ({ locked }) => this._set({ meeting: { ...this.state.meeting, locked } }));
+    socket.on('meeting:permissions', (permissions) => this._set({ meeting: { ...this.state.meeting, permissions } }));
+    socket.on('participant:updated', (p) => {
+      if (p.userId === this.state.self?.userId) {
+        const before = this.state.self;
+        this._set({ self: { ...before, ...p, audio: before.audio, video: before.video } });
+      } else {
+        const prev = this.state.participants.find((x) => x.userId === p.userId);
+        if (p.handRaised && !prev?.handRaised) this._notify('hand', { name: p.name });
+        this._upsertParticipant(p);
+      }
+    });
+    socket.on('participant:mutedByHost', ({ canSpeak }) => {
+      this.localMedia.setAudioEnabled(false);
+      this._set({ self: { ...this.state.self, canSpeak } });
+      this._notify('mutedByHost', {});
+    });
+    socket.on('participant:speakPermission', ({ canSpeak }) => {
+      this._set({ self: { ...this.state.self, canSpeak, handRaised: canSpeak ? false : this.state.self?.handRaised } });
+      this._notify(canSpeak ? 'speakGranted' : 'speakRevoked', {});
+    });
+    socket.on('room:activeSpeaker', ({ userId }) => this._set({ activeSpeaker: userId }));
+    socket.on('mediasoup:newProducer', (info) => this.sfu?.onNewProducer(info));
+    socket.on('mediasoup:consumerClosed', (info) => this.sfu?.onConsumerClosed(info));
+    socket.on('mediasoup:reset', () => this.sfu?.rebuild().catch((e) => console.warn('[sfu] rebuild failed', e)));
 
     socket.on('participant:joined', (p) => {
       this._upsertParticipant(p);
@@ -154,21 +185,57 @@ export class MeetingClient extends EventTarget {
     else this._onAdmitted(res);
   }
 
-  _onAdmitted({ self, participants, waiting, meeting }) {
+  _onAdmitted({ self, participants, waiting, meeting, resumed }) {
     const known = new Map(this.state.participants.map((p) => [p.userId, p]));
     this._set({
       phase: 'in-meeting',
       waitingReason: null,
       self,
       waiting: waiting || [],
+      mediaMode: meeting.mediaMode || 'p2p',
       meeting: { ...this.state.meeting, ...meeting },
       participants: participants.map((p) => ({ ...known.get(p.userId), ...p, reconnecting: !p.connected })),
     });
+    if (this.state.mediaMode === 'sfu') {
+      this._startSfu(resumed);
+      this._sendMediaState();
+      return;
+    }
     // Drop peers for people who left while we were away.
     for (const id of [...this.peers.keys()]) if (!participants.some((p) => p.userId === id)) this._removePeer(id);
     participants.forEach((p) => this._ensurePeer(p.userId));
     this._sendMediaState();
     this._startWatchdog();
+  }
+
+  async _startSfu(resumed) {
+    if (this.sfu && !this.sfu.closed) {
+      this.sfu.socket = this.socket;
+      await this.sfu.resync().catch((e) => console.warn('[sfu] resync failed', e));
+      return;
+    }
+    const sfu = new SfuSession({ socket: this.socket, localMedia: this.localMedia, iceServers: this.iceServers, forceRelay: this.forceRelay });
+    this.sfu = sfu;
+    sfu.addEventListener('remote', ({ detail }) =>
+      this._patchParticipant(detail.userId, { stream: detail.stream, streamVersion: detail.version, connectionState: 'connected' }),
+    );
+    sfu.addEventListener('network', ({ detail }) => this._set({ network: detail }));
+    sfu.addEventListener('notice', ({ detail }) => this._notify(detail.type, detail));
+    sfu.addEventListener('recvstate', ({ detail }) => this._set({ sfuState: detail.state }));
+    try {
+      await sfu.start();
+    } catch (err) {
+      console.warn('[sfu] start failed', err);
+      this._notify('mediaError', { message: err.message || 'Could not connect to the media server' });
+      // Retry once after a short delay (e.g. worker restarting).
+      setTimeout(() => this.state.phase === 'in-meeting' && sfu.rebuild().catch(() => {}), 3000);
+    }
+    void resumed;
+  }
+
+  /** Spatial layer (0 low, 1 mid, 2 high) we want for a participant's video. SFU only. */
+  setVideoQuality(userId, layer) {
+    this.sfu?.setPreferredLayer(userId, layer);
   }
 
   /** Safety net: if a pair has no working session for a while, ask for (or start) a new one. */
@@ -193,6 +260,7 @@ export class MeetingClient extends EventTarget {
   }
 
   _ensurePeer(userId, sessionId) {
+    if (this.state.mediaMode === 'sfu') return null;
     if (!this.state.self || userId === this.state.self.userId) return null;
     const existing = this.peers.get(userId);
     if (existing && !existing.closed && (!sessionId || existing.sessionId === sessionId)) return existing;
@@ -274,6 +342,10 @@ export class MeetingClient extends EventTarget {
   }
 
   _broadcastTrack(kind, track) {
+    if (this.state.mediaMode === 'sfu') {
+      this.sfu?.syncLocal();
+      return;
+    }
     const sendTrack = kind === 'video' && !this.localMedia.videoEnabled ? null : track;
     for (const peer of this.peers.values()) peer.setTrack(kind, sendTrack);
   }
@@ -281,6 +353,14 @@ export class MeetingClient extends EventTarget {
   _sendMediaState() {
     if (this.state.phase !== 'in-meeting' || !this.socket?.connected) return;
     const lm = this.localMedia;
+    if (this.state.mediaMode === 'sfu') {
+      // The server derives our audio/video state from the producers; keep our own view in sync.
+      this.sfu?.syncLocal();
+      const audio = Boolean(lm.audioTrack && lm.audioEnabled);
+      const video = Boolean(lm.videoTrack && lm.videoEnabled);
+      if (this.state.self && (this.state.self.audio !== audio || this.state.self.video !== video)) this._set({ self: { ...this.state.self, audio, video } });
+      return;
+    }
     const audio = Boolean(lm.audioTrack && lm.audioEnabled);
     const video = Boolean(lm.videoTrack && lm.videoEnabled);
     if (this._lastMedia?.audio === audio && this._lastMedia?.video === video && this._lastMediaSocket === this.socket.id) return;
@@ -314,6 +394,43 @@ export class MeetingClient extends EventTarget {
     return this._ack('waiting:admit', { userId });
   }
 
+  admitAll() {
+    return this._ack('waiting:admitAll');
+  }
+
+  mute(userId) {
+    return this._ack('host:mute', { userId });
+  }
+
+  muteAll() {
+    return this._ack('host:muteAll');
+  }
+
+  remove(userId) {
+    return this._ack('host:remove', { userId });
+  }
+
+  setLocked(locked) {
+    return this._ack('host:lock', { locked });
+  }
+
+  setAllowSelfUnmute(allowSelfUnmute) {
+    return this._ack('host:permissions', { allowSelfUnmute });
+  }
+
+  grantSpeak(userId, granted) {
+    return this._ack('host:grantSpeak', { userId, granted });
+  }
+
+  lowerHand(userId) {
+    return this._ack('host:lowerHand', { userId });
+  }
+
+  async raiseHand(raised) {
+    await this._ack('participant:raiseHand', { raised });
+    this._set({ self: { ...this.state.self, handRaised: raised } });
+  }
+
   deny(userId) {
     return this._ack('waiting:deny', { userId });
   }
@@ -338,6 +455,8 @@ export class MeetingClient extends EventTarget {
   }
 
   _teardown() {
+    this.sfu?.close();
+    this.sfu = null;
     clearInterval(this._watchdog);
     this._watchdog = null;
     for (const id of [...this.peers.keys()]) this._removePeer(id);

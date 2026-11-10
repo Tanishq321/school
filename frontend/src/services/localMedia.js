@@ -194,6 +194,15 @@ export class LocalMedia extends EventTarget {
     this._emit();
   }
 
+  /** Force mute/unmute state (used when the host mutes us or refuses an unmute). */
+  setAudioEnabled(enabled) {
+    if (this.audioEnabled === enabled) return;
+    this.audioEnabled = enabled;
+    if (this.audioTrack) this.audioTrack.enabled = enabled;
+    this.dispatchEvent(new CustomEvent('track', { detail: { kind: 'audio', track: this.audioTrack } }));
+    this._emit();
+  }
+
   /** Camera off releases the device entirely (hardware light goes off). */
   async toggleVideo() {
     if (this.videoEnabled && this.videoTrack) {

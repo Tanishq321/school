@@ -9,7 +9,7 @@ Good for **testing Phase 1** with real people on real devices. It isn't the prod
 | Backend (API + Socket.IO) | Render web service | supports WebSockets |
 | Frontend | Render (same service) **or** Vercel | your choice, see Option A / B |
 | TURN (coturn) | a small VPS | Render and Vercel accept only HTTP(S) on 80/443, with no UDP, so coturn can't run there |
-| mediasoup SFU (Phase 2) | a VPS | same reason (needs a UDP port range). Plan to move off Render for Phase 2 |
+| mediasoup SFU (group classes) | a VPS | needs UDP/TCP ports. On Render the app runs with `MEDIASOUP_ENABLED=false`: 1-to-1 classes work, group classes need the VPS |
 
 ## 0. Push to GitHub
 

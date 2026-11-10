@@ -73,7 +73,7 @@ export default function RegisterPage() {
                 <input type="radio" name="role" value={value} checked={form.role === value} onChange={set('role')} className="sr-only" />
                 <Icon size={20} className="text-brand-600 dark:text-brand-400" />
                 <span className="text-sm font-semibold">{label}</span>
-                <span className="text-xs text-ink-2 dark:text-stone-400">{hint}</span>
+                <span className="text-xs text-ink-2 dark:text-slate-400">{hint}</span>
               </label>
             ))}
           </div>

@@ -45,10 +45,27 @@ Participants never receive another user's credentials, socket ids, or internal r
 
 | Phase | Topology | Limit | Why |
 |---|---|---|---|
-| 1 | P2P WebRTC (perfect negotiation) + TURN fallback | 2 people per meeting (enforced on server, `P2P_MAX_PARTICIPANTS`) | 1-to-1 classes need no SFU; avoids routing media through our servers when unnecessary |
-| 2 | mediasoup SFU for every meeting with more than 2 people (and optionally all meetings) | `maxParticipants` per meeting, 20 by design; workers capped to CPU cores | Mesh doesn't scale beyond 3–4 people; SFU sends each uplink once |
+| Server mode | Topology | Limit | When |
+|---|---|---|---|
+| `MEDIASOUP_ENABLED=false` | P2P WebRTC (deterministic initiator) + TURN fallback | 2 people (`P2P_MAX_PARTICIPANTS`) | Hosts without UDP ports (e.g. Render): 1-to-1 classes only |
+| `MEDIASOUP_ENABLED=true` (Phase 2) | mediasoup SFU for **every** meeting | `maxParticipants` per meeting, capped by `SFU_MAX_PARTICIPANTS` (20) | VPS deployments: groups of up to 20 |
 
-Phase 2 plan for mediasoup: one `Worker` per CPU core (capped by `MEDIASOUP_NUM_WORKERS`), rooms are assigned to the least-loaded worker, one `Router` per room, one send and one receive `WebRtcTransport` per participant, simulcast (3 layers) for camera, and `consumer.setPreferredLayers` driven by tile size. All mediasoup socket events are validated against socket → user → room membership. For multiple app instances, room → instance affinity is stored in Redis and the Socket.IO Redis adapter is used (Phase 6).
+The mode is decided per server, not per meeting: one code path per deployment is easier to operate and server-side recording (Phase 4) needs media on the SFU anyway.
+
+### mediasoup design (implemented)
+
+- **Workers:** a fixed pool, one per CPU core by default (`MEDIASOUP_NUM_WORKERS`). Never unbounded. Each worker owns one **WebRtcServer**, so all of its transports share a single UDP+TCP port: the firewall needs only `MEDIASOUP_PORT_BASE … +N-1`.
+- **Rooms:** one `Router` per meeting, created lazily on the least-loaded worker (max `MEDIASOUP_MAX_ROOMS_PER_WORKER`). Closed when the meeting ends.
+- **Peers:** at most one send and one recv `WebRtcTransport`, one producer per source (`mic`, `camera`; `screen` reserved for Phase 3). Consumers start paused and are resumed by the client once wired, so the first keyframe isn't lost.
+- **Simulcast:** camera publishes 3 layers (¼, ½, full; 150 k / 500 k / 1.2 Mbps). Each receiver asks for the layer its tile needs: spotlight = high, grid ≤ 4 = mid, larger grids and filmstrip = low.
+- **Active speaker:** `ActiveSpeakerObserver` drives speaker view.
+- **Security:** every `mediasoup:*` event resolves the room from the authenticated socket and checks membership. Transport, producer and consumer ids are only looked up inside the caller's own peer, so ids can't be used across users.
+- **Resilience:** on a signalling blip, transports stay open during the grace period and the client re-syncs (`mediasoup:join` with the same session id). After a server restart or a crashed worker (replaced automatically, `mediasoup:reset`), clients rebuild transports and re-publish.
+- **Bandwidth:** `maxIncomingBitrate` per send transport; the server's own congestion control and simulcast adapt the rest.
+
+### Host controls (enforced on the server)
+
+Mute one or all (pauses the mic producer on the SFU), "students may unmute themselves" permission with per-student "allow to speak", lower hands, remove (stored ban; REST join returns 403), lock (new joins return 423; people already admitted can reconnect), admit all. In P2P mode the server can't pause media, so mute is delivered to the client and the UI enforces it.
 
 ## 4. Reliability behaviour (Phase 1)
 
@@ -80,7 +97,7 @@ Phase 2 plan for mediasoup: one `Worker` per CPU core (capped by `MEDIASOUP_NUM_
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Project init, auth, dashboard, meeting create/join, waiting room, 1-to-1 WebRTC, Socket.IO signalling, coturn config, diagnostics | Implemented and tested here (see testing.md) |
-| 2 | mediasoup SFU, group meetings, mute/remove/lock, grid & speaker layouts | Not started |
+| 2 | mediasoup SFU, group meetings up to 20, host controls (mute/mute-all/remove/lock/permissions), raise hand, grid & speaker layouts, premium redesign | Implemented and tested here (see testing.md) |
 | 3 | Screen share, chat, whiteboard, attendance UI, teacher controls | Attendance *recording* exists from Phase 1; the rest is not started |
 | 4 | Server-side recording (mediasoup → PlainTransport → FFmpeg/GStreamer), dashboards, calendar | Not started |
 | 5 | Admin dashboard, hardening, monitoring, Capacitor apps | Not started |

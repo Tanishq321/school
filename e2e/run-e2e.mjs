@@ -22,9 +22,12 @@ const PORT = Number(process.env.E2E_PORT || 4100);
 // E2E_SPLIT=1 mimics "frontend on Vercel + backend on Render": the page is served by a separate origin
 // that proxies /api (like a Vercel rewrite) while Socket.IO connects straight to the backend origin.
 const SPLIT = process.env.E2E_SPLIT === '1';
+// E2E_SFU=1 runs every call through the mediasoup SFU instead of peer-to-peer.
+const SFU = process.env.E2E_SFU === '1';
+const SCENARIOS = (process.env.E2E_SCENARIOS || (SFU ? 'direct,relay,group' : 'direct,relay')).split(',');
 const FRONT_PORT = PORT + 1;
 const BASE = SPLIT ? `http://localhost:${FRONT_PORT}` : `http://localhost:${PORT}`;
-const ART = path.join(ROOT, 'e2e', 'artifacts', process.env.E2E_SPLIT === '1' ? 'split' : '');
+const ART = path.join(ROOT, 'e2e', 'artifacts', process.env.E2E_SPLIT === '1' ? 'split' : process.env.E2E_SFU === '1' ? 'sfu' : '');
 const TURN_SECRET = 'e2e-turn-secret-0123456789abcdef0123456789';
 fs.mkdirSync(ART, { recursive: true });
 
@@ -75,6 +78,11 @@ function startBackend() {
         SERVE_FRONTEND_DIST: SPLIT ? '' : path.join(ROOT, 'frontend', 'dist'),
         CORS_ORIGINS: SPLIT ? BASE : '',
         RECONNECT_GRACE_SECONDS: '20',
+        RATE_LIMIT_MULTIPLIER: '10', // all test browsers share one IP
+        MEDIASOUP_ENABLED: SFU ? 'true' : 'false',
+        MEDIASOUP_LISTEN_IP: '127.0.0.1',
+        MEDIASOUP_NUM_WORKERS: '1',
+        MEDIASOUP_PORT_BASE: '44300',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -258,7 +266,7 @@ async function scenario(mode) {
     await step(`[${mode}] student registers + verifies email`, () => registerAndVerify(S.page, student));
 
     await step(`[${mode}] teacher creates instant meeting and starts it`, async () => {
-      await clickText(T.page, 'button', 'New meeting');
+      await clickText(T.page, 'button', 'Open a room now');
       await T.page.waitForFunction(() => /\/m\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/.test(location.pathname), { timeout: 15_000 });
       code = T.page.url().split('/m/')[1];
       if (relay) await T.page.evaluate(() => localStorage.setItem('vp.forceRelay', '1'));
@@ -315,10 +323,11 @@ async function scenario(mode) {
     });
 
     if (!relay) {
-      await step(`[${mode}] backend restart mid-call: media keeps flowing, both sides rejoin`, async () => {
+      await step(`[${mode}] backend restart mid-call: ${SFU ? 'media recovers' : 'media keeps flowing'}, both sides rejoin`, async () => {
         await restartBackend();
-        // P2P media doesn't depend on the app server, so video should keep flowing during the outage.
-        const during = await remoteVideoFlowing(S.page, 8000);
+        // P2P media doesn't depend on the app server, so video keeps flowing during the outage.
+        // With the SFU, media stops with the server and must be rebuilt after it comes back.
+        const during = SFU ? 'SFU mode: media rebuilt after restart' : await remoteVideoFlowing(S.page, 8000);
         await T.page.waitForFunction(() => document.querySelector('[data-testid="meeting-room"]') && !document.body.innerText.includes('Reconnecting…'), { timeout: 30_000 });
         await S.page.waitForFunction(() => document.querySelector('[data-testid="meeting-room"]') && !document.body.innerText.includes('Reconnecting…'), { timeout: 30_000 });
         await sleep(3000);
@@ -350,6 +359,188 @@ async function scenario(mode) {
   }
 }
 
+// ---------------------------------------------------------------- group class (SFU)
+
+async function apiRegister(name, email, role) {
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name, email, password: 'Classroom123', role }),
+  });
+  if (res.status !== 201) throw new Error(`register ${email}: ${res.status}`);
+  await sleep(300);
+  const token = new URL(verificationLink(email)).searchParams.get('token');
+  const v = await fetch(`http://127.0.0.1:${PORT}/api/auth/verify-email`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) });
+  if (!v.ok) throw new Error(`verify ${email}: ${v.status}`);
+}
+
+async function uiLogin(page, email) {
+  await page.goto(`${BASE}/login`, { waitUntil: 'networkidle0' });
+  await page.type('input[type="email"]', email);
+  await page.type('input[type="password"]', 'Classroom123');
+  await clickText(page, 'button[type="submit"]', 'Sign in');
+  await page.waitForFunction(() => document.body.innerText.includes('Join a class'), { timeout: 15_000 });
+}
+
+/** Every remote tile on the page shows a moving picture. */
+async function allRemoteVideosFlowing(page, expected, timeout = 30_000) {
+  const read = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('[data-testid="tile-remote"]')].map((t) => {
+        const v = t.querySelector('video');
+        return { name: t.dataset.user, frames: v && v.videoWidth ? v.getVideoPlaybackQuality().totalVideoFrames : -1 };
+      }),
+    );
+  const deadline = Date.now() + timeout;
+  let last = [];
+  while (Date.now() < deadline) {
+    const a = await read();
+    if (a.length === expected && a.every((x) => x.frames >= 0)) {
+      await sleep(2000);
+      const b = await read();
+      const moving = b.filter((x) => x.frames > (a.find((y) => y.name === x.name)?.frames ?? Infinity));
+      if (moving.length === expected) return `${expected} remote videos playing`;
+      last = b;
+    } else last = a;
+    await sleep(700);
+  }
+  throw new Error(`[${page.label}] remote videos not all flowing: ${JSON.stringify(last)}`);
+}
+
+const tileSel = (name) => `[data-testid="tile-remote"][data-user="${name}"]`;
+
+async function hostAction(page, studentName, action) {
+  await page.click(`button[aria-label="Actions for ${studentName}"]`);
+  await clickText(page, '[role="menuitem"]', action);
+}
+
+async function groupScenario() {
+  const tag = Date.now() % 100000;
+  const names = ['Asha Teacher', 'Student One', 'Student Two', 'Student Three', 'Student Four'];
+  const emails = names.map((n, i) => `${n.split(' ')[1].toLowerCase()}.${i}.${tag}@example.test`);
+  const extraEmail = `latecomer.${tag}@example.test`;
+  const people = [];
+  try {
+    await step('[group] create 1 teacher + 4 students (+1 latecomer)', async () => {
+      await apiRegister(names[0], emails[0], 'teacher');
+      for (let i = 1; i < names.length; i += 1) await apiRegister(names[i], emails[i], 'student');
+      await apiRegister('Late Comer', extraEmail, 'student');
+    });
+    for (let i = 0; i < names.length; i += 1) {
+      const b = await launch(i === 0 ? 'teacher' : `s${i}`);
+      b.page.on('dialog', (d) => d.accept());
+      people.push(b);
+    }
+    const [T, S1, S2, S3, S4] = people.map((p) => p.page);
+    await step('[group] everyone signs in', () => Promise.all(people.map((p, i) => uiLogin(p.page, emails[i]))));
+
+    let code;
+    await step('[group] teacher opens a room', async () => {
+      await clickText(T, 'button', 'Open a room now');
+      await T.waitForFunction(() => /\/m\/[a-z-]+$/.test(location.pathname), { timeout: 15_000 });
+      code = T.url().split('/m/')[1];
+      await clickText(T, 'button', 'Start class');
+      await waitSel(T, '[data-testid="meeting-room"]');
+      return `code ${code}`;
+    });
+
+    await step('[group] 4 students knock; teacher admits all at once', async () => {
+      for (const p of [S1, S2, S3, S4]) {
+        await p.goto(`${BASE}/m/${code}`, { waitUntil: 'networkidle0' });
+        await clickText(p, 'button', 'Join class');
+      }
+      await T.waitForFunction(() => [...document.querySelectorAll('button')].some((b) => b.textContent.includes('Admit all')), { timeout: 20_000 });
+      await T.waitForFunction(() => document.querySelectorAll('button[aria-label^="Admit "]').length === 4, { timeout: 20_000 });
+      await clickText(T, 'button', 'Admit all');
+      await Promise.all([S1, S2, S3, S4].map((p) => waitSel(p, '[data-testid="meeting-room"]', 20_000)));
+    });
+
+    await step('[group] teacher sees 4 live videos in grid view', async () => {
+      const layout = await T.$eval('[data-testid="meeting-room"]', (e) => e.dataset.layout);
+      if (layout !== 'grid') throw new Error(`layout ${layout}`);
+      return allRemoteVideosFlowing(T, 4, 45_000);
+    });
+    for (const [i, p] of [S1, S2, S3, S4].entries()) {
+      await step(`[group] student ${i + 1} sees 4 live videos (teacher + 3 classmates)`, () => allRemoteVideosFlowing(p, 4, 45_000));
+    }
+    await step('[group] audio reaches the teacher (speaking indicator)', async () => {
+      await waitSel(T, '[data-testid="tile-remote"][data-speaking]', 20_000);
+      return 'speaking indicator triggered';
+    });
+    await step('[group] badge reports the media path', async () => `badge "${(await badgeText(T)).trim()}"`);
+    await T.screenshot({ path: path.join(ART, 'group-teacher-grid.png') });
+    await S2.screenshot({ path: path.join(ART, 'group-student-grid.png') });
+
+    await step('[group] speaker view: focus tile + filmstrip', async () => {
+      await T.click('button[aria-label="Speaker view"]');
+      await T.waitForFunction(() => document.querySelector('[data-testid="meeting-room"]').dataset.layout === 'speaker', { timeout: 5000 });
+      const strip = await T.$$eval('[data-testid="filmstrip"] [data-testid^="tile-"]', (els) => els.length);
+      if (strip !== 4) throw new Error(`filmstrip has ${strip} tiles`);
+      await T.screenshot({ path: path.join(ART, 'group-teacher-speaker.png') });
+      await T.click('button[aria-label="Grid view"]');
+      return 'focus + 4 in filmstrip';
+    });
+
+    await step('[group] host mutes Student One (enforced by the SFU)', async () => {
+      // The panel opens by itself when someone knocks; only open it if it's closed.
+      if (!(await T.$('aside[aria-label="People"]'))) await T.click('button[aria-label="People"]');
+      await waitSel(T, 'button[aria-label="Actions for Student One"]');
+      await hostAction(T, 'Student One', 'Mute');
+      await S1.waitForFunction(() => document.body.innerText.includes('The host muted your microphone'), { timeout: 8000 });
+      await waitSel(S1, 'button[aria-label^="Unmute"]', 5000);
+      await waitSel(T, `${tileSel('Student One')} [aria-label="Muted"]`, 8000);
+    });
+
+    await step('[group] self-unmute off: Student Two cannot unmute, raises hand, host lets them speak', async () => {
+      await clickText(T, 'label', 'Students may unmute themselves');
+      await clickText(T, 'button', 'Mute everyone');
+      await waitSel(S2, 'button[aria-label^="Unmuting is off"]', 8000);
+      await S2.click('button[aria-label^="Unmuting is off"]');
+      await S2.waitForFunction(() => document.body.innerText.includes('Raise your hand to ask to speak'), { timeout: 5000 });
+      await S2.click('button[aria-label="Raise hand"]');
+      await waitSel(T, `${tileSel('Student Two')} [aria-label="Hand raised"]`, 8000);
+      await hostAction(T, 'Student Two', 'Allow to speak');
+      await S2.waitForFunction(() => document.body.innerText.includes('invited you to speak'), { timeout: 8000 });
+      await S2.click('button[aria-label^="Unmute"]');
+      await waitSel(S2, 'button[aria-label^="Mute ("]', 5000);
+      await T.waitForFunction((sel) => !document.querySelector(sel), { timeout: 8000 }, `${tileSel('Student Two')} [aria-label="Muted"]`);
+      await waitSel(T, `${tileSel('Student Two')}[data-speaking]`, 15_000);
+      return 'Student Two audible again';
+    });
+
+    await step('[group] host removes Student Three; they cannot rejoin', async () => {
+      await hostAction(T, 'Student Three', 'Remove from class');
+      await S3.waitForFunction(() => document.body.innerText.includes('You were removed from the class'), { timeout: 8000 });
+      await T.waitForFunction(() => document.querySelectorAll('[data-testid="tile-remote"]').length === 3, { timeout: 8000 });
+      await S3.goto(`${BASE}/m/${code}`, { waitUntil: 'networkidle0' });
+      await clickText(S3, 'button', 'Join class');
+      await S3.waitForFunction(() => document.body.innerText.includes('removed you'), { timeout: 8000 });
+    });
+
+    await step('[group] host locks the room; a newcomer is refused', async () => {
+      await clickText(T, 'label', 'Lock the room');
+      await waitSel(T, '[aria-label="Room locked"]', 5000);
+      const L = await launch('latecomer');
+      people.push(L);
+      await uiLogin(L.page, extraEmail);
+      await L.page.goto(`${BASE}/m/${code}`, { waitUntil: 'networkidle0' });
+      await clickText(L.page, 'button', 'Join class');
+      await L.page.waitForFunction(() => document.body.innerText.includes('locked this meeting'), { timeout: 8000 });
+      await T.screenshot({ path: path.join(ART, 'group-teacher-panel.png') });
+    });
+
+    await step('[group] remaining 3 students still receive everyone', () => allRemoteVideosFlowing(S4, 3, 30_000));
+
+    await step('[group] teacher ends the class for everyone', async () => {
+      await T.click('button[aria-label="Leave class"]');
+      await clickText(T, '[role="menuitem"]', 'End class for everyone');
+      await Promise.all([S1, S2, S4].map((p) => p.waitForFunction(() => document.body.innerText.includes('The class has ended'), { timeout: 10_000 })));
+    });
+  } finally {
+    await Promise.all(people.map((p) => p.browser.close().catch(() => {})));
+  }
+}
+
 // ---------------------------------------------------------------- main
 
 let failed = false;
@@ -359,9 +550,10 @@ try {
   await startBackend();
   if (SPLIT) frontProxy = await startFrontProxy();
   log(`app on ${BASE}${SPLIT ? ` (split: API proxied, sockets direct to :${PORT})` : ''}, db ${dbName}`);
-  for (const mode of ['direct', 'relay']) {
+  for (const mode of SCENARIOS) {
     try {
-      await scenario(mode);
+      if (mode === 'group') await groupScenario();
+      else await scenario(mode);
     } catch {
       failed = true;
     }

@@ -113,7 +113,19 @@ sudo bash infrastructure/deployment/firewall.sh
 | 3478 | UDP + TCP | STUN / TURN |
 | 5349 | TCP | TURN over TLS (networks that only allow TLS) |
 | 49152–65535 | UDP | TURN relay range (`min-port`/`max-port`) |
-| 40000–49999 | UDP + TCP | mediasoup RTP. **Phase 2**, keep closed until then |
+| 40000–40015 | UDP + TCP | mediasoup SFU: one port per worker (`MEDIASOUP_PORT_BASE` + worker index) |
+
+## 8b. mediasoup (group classes)
+
+In `backend/.env` set:
+
+```ini
+MEDIASOUP_ENABLED=true
+MEDIASOUP_ANNOUNCED_ADDRESS=<server public IP>
+MEDIASOUP_PORT_BASE=40000
+```
+
+mediasoup ships a prebuilt worker for Linux x64; if your platform needs a build, install `python3 make g++` first. On startup the log shows `mediasoup workers started` with the port range, and `/api/health` reports `"mediaMode":"sfu"`. If coturn runs on the same host, add `allowed-peer-ip=<server private IP>` to `turnserver.conf` so relayed clients can reach the SFU. Size: about 1 vCPU per ~40–60 concurrent forwarded video streams; a 20-person class with simulcast is comfortable on 2 vCPU.
 
 ## 9. TURN test procedure
 

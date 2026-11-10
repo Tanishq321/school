@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext.jsx';
 import AppShell from './components/AppShell.jsx';
@@ -7,8 +8,9 @@ import RegisterPage from './pages/RegisterPage.jsx';
 import VerifyEmailPage from './pages/VerifyEmailPage.jsx';
 import { ForgotPasswordPage, ResetPasswordPage } from './pages/PasswordPages.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
-import MeetingPage from './pages/MeetingPage.jsx';
-import DiagnosticsPage from './pages/DiagnosticsPage.jsx';
+// Heavy media code (mediasoup-client, WebRTC helpers) loads only when entering a room.
+const MeetingPage = lazy(() => import('./pages/MeetingPage.jsx'));
+const DiagnosticsPage = lazy(() => import('./pages/DiagnosticsPage.jsx'));
 import ProfilePage from './pages/ProfilePage.jsx';
 import NotFoundPage from './pages/NotFoundPage.jsx';
 
@@ -39,10 +41,10 @@ export default function App() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
-      <Route path="/m/:code" element={<RequireAuth><MeetingPage /></RequireAuth>} />
+      <Route path="/m/:code" element={<RequireAuth><Suspense fallback={<FullPageSpinner label="Preparing the room…" />}><MeetingPage /></Suspense></RequireAuth>} />
       <Route element={<RequireAuth><AppShell /></RequireAuth>}>
         <Route index element={<DashboardPage />} />
-        <Route path="/diagnostics" element={<DiagnosticsPage />} />
+        <Route path="/diagnostics" element={<Suspense fallback={<FullPageSpinner />}><DiagnosticsPage /></Suspense>} />
         <Route path="/profile" element={<ProfilePage />} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />

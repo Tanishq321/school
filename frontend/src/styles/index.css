@@ -1,33 +1,46 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/bodoni-moda/opsz.css';
+@import '@fontsource-variable/hanken-grotesk';
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Design tokens: warm paper neutrals + deep teal accent + saffron highlight. */
+/*
+ * "Private study after hours": midnight lacquer, porcelain, brass hardware, film grain.
+ * Fonts are self-hosted (no third-party font CDN).
+ */
 @theme {
-  --font-sans: 'Inter var', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --font-sans: 'Hanken Grotesk Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Bodoni Moda Variable', 'Didot', 'Bodoni 72', Georgia, serif;
 
-  --color-paper: #f7f4ee;
-  --color-paper-2: #efeae0;
-  --color-ink: #17201d;
-  --color-ink-2: #4a5550;
-  --color-line: #ddd6c8;
+  /* Light: porcelain & ink */
+  --color-paper: #f4f3ef;
+  --color-paper-2: #eae8e2;
+  --color-ink: #161c2c;
+  --color-ink-2: #535a6d;
+  --color-line: #d9d5cb;
+  --color-vellum: #ece6da;
 
-  --color-night: #0d1412;
-  --color-night-2: #141d1a;
-  --color-night-3: #1c2723;
-  --color-night-line: #2a3631;
+  /* Dark: midnight lacquer */
+  --color-night: #0f1628;
+  --color-night-2: #141c31;
+  --color-night-3: #1b253d;
+  --color-night-line: #2a3654;
 
-  --color-brand-50: #ecf8f5;
-  --color-brand-100: #cfeee6;
-  --color-brand-400: #3fb39c;
-  --color-brand-500: #14907b;
-  --color-brand-600: #0f766e;
-  --color-brand-700: #0c5d57;
+  /* Brass (accent, used as hardware: rules, rings, focus) */
+  --color-brand-50: #f7f1e6;
+  --color-brand-100: #ebddc1;
+  --color-brand-300: #d8be8c;
+  --color-brand-400: #c6a26a;
+  --color-brand-500: #ad8851;
+  --color-brand-600: #8d6c3b;
+  --color-brand-700: #6e532c;
+  --color-saffron: #d8be8c;
 
-  --color-saffron: #f5b942;
-  --color-danger: #d9483b;
-  --color-danger-600: #bf3a2e;
+  /* Oxblood (live / leave / destructive) */
+  --color-danger: #a83a32;
+  --color-danger-600: #8e2f28;
+
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @layer base {
@@ -37,32 +50,67 @@
     height: 100%;
   }
   body {
-    @apply bg-paper text-ink antialiased dark:bg-night dark:text-stone-100;
-    font-feature-settings: 'cv11', 'ss01';
+    @apply bg-paper font-sans text-[15px] leading-relaxed text-ink antialiased dark:bg-night dark:text-vellum;
+    font-feature-settings: 'ss01', 'tnum' 0;
+  }
+  .font-display {
+    font-optical-sizing: auto;
+    letter-spacing: -0.012em;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--color-brand-400) 40%, transparent);
   }
   :focus-visible {
-    @apply outline-2 outline-offset-2 outline-brand-500;
+    @apply outline-1 outline-offset-2 outline-brand-400;
+  }
+
+  /* Film grain over every surface: a 1-3% texture so flat colour reads as material, not pixels. */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    pointer-events: none;
+    opacity: 0.05;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .dark body::after {
+    opacity: 0.07;
+    mix-blend-mode: overlay;
   }
 }
 
 @layer components {
   .card {
-    @apply rounded-2xl border border-line bg-white/80 shadow-sm backdrop-blur dark:border-night-line dark:bg-night-2/80;
+    @apply rounded-[22px] border border-line/80 bg-white/70 shadow-[0_1px_0_rgba(255,255,255,.6)_inset,0_18px_40px_-28px_rgba(22,28,44,.35)] backdrop-blur-sm dark:border-night-line dark:bg-night-2/70 dark:shadow-[0_1px_0_rgba(255,255,255,.04)_inset,0_24px_60px_-30px_rgba(0,0,0,.8)];
   }
   .input {
-    @apply w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-[15px] text-ink placeholder:text-stone-400
-      transition focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 focus:outline-none
-      disabled:opacity-60 dark:border-night-line dark:bg-night-3 dark:text-stone-100;
+    @apply w-full rounded-xl border border-line bg-white/80 px-3.5 py-2.5 text-[15px] text-ink placeholder:text-slate-400
+      transition duration-200 focus:border-brand-400 focus:ring-4 focus:ring-brand-400/15 focus:outline-none
+      disabled:opacity-60 dark:border-night-line dark:bg-night-3/80 dark:text-vellum dark:placeholder:text-slate-500;
   }
   .label {
-    @apply mb-1.5 block text-sm font-medium text-ink-2 dark:text-stone-300;
+    @apply mb-1.5 block text-[13px] font-medium tracking-wide text-ink-2 dark:text-slate-300;
+  }
+  /* A pool of warm desk-lamp light falling on lacquer: the signature surface. */
+  .lamplight {
+    background:
+      radial-gradient(70% 55% at 22% -5%, rgba(216, 190, 140, 0.2), transparent 65%),
+      radial-gradient(50% 40% at 100% 110%, rgba(110, 83, 44, 0.18), transparent 70%),
+      var(--color-night);
+  }
+  /* Engraved brass hairline. */
+  .hairline {
+    background: linear-gradient(90deg, transparent, rgba(198, 162, 106, 0.55), transparent);
+    height: 1px;
   }
 }
 
 @keyframes fade-up {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -70,17 +118,23 @@
   }
 }
 .animate-fade-up {
-  animation: fade-up 0.25s ease-out both;
+  animation: fade-up 0.45s var(--ease-out-quint) both;
 }
 
-@keyframes speaking {
-  0%,
-  100% {
-    box-shadow: 0 0 0 2px var(--color-brand-400);
+@keyframes reveal {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(12px);
   }
-  50% {
-    box-shadow: 0 0 0 4px var(--color-brand-400);
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: none;
   }
+}
+.animate-reveal {
+  animation: reveal 1.1s var(--ease-out-quint) both;
 }
 
 @media (prefers-reduced-motion: reduce) {

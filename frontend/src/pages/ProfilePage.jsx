@@ -39,7 +39,7 @@ export default function ProfilePage() {
         <Avatar name={user.name} size={64} />
         <div>
           <h1 className="font-display text-3xl font-semibold">{user.name}</h1>
-          <p className="text-ink-2 capitalize dark:text-stone-400">
+          <p className="text-ink-2 capitalize dark:text-slate-400">
             {user.role} · {user.email} {user.emailVerified ? '' : '(unverified)'}
           </p>
         </div>
