@@ -34,16 +34,14 @@ const meetingSchema = new mongoose.Schema(
       waitingRoom: { type: Boolean, default: true },
       passwordHash: { type: String, select: false },
       hasPassword: { type: Boolean, default: false },
-      maxParticipants: { type: Number, min: 2, max: 100, default: 20 },
-      allowSelfUnmute: { type: Boolean, default: true },
       allowScreenShare: { type: Boolean, default: false },
       allowDrawing: { type: Boolean, default: false },
       chatMode: { type: String, enum: ['everyone', 'host'], default: 'everyone' },
       saveChat: { type: Boolean, default: true },
     },
     locked: { type: Boolean, default: false },
-    // People invited by email: they see the class on their dashboard and skip the waiting room.
-    invitees: { type: [String], default: [], validate: (v) => v.length <= 100 },
+    // The invited student (by email): sees the class on their pages and skips the waiting room.
+    invitees: { type: [String], default: [], validate: (v) => v.length <= 1 },
     notes: { type: String, maxlength: 20000, default: '' }, // the host's private class notes
     bannedUsers: { type: [mongoose.Schema.Types.ObjectId], default: [], select: false },
     inviteNonce: { type: String, required: true, select: false },

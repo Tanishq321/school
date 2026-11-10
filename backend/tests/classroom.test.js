@@ -14,7 +14,7 @@ const ChatMessage = (await import('../src/models/ChatMessage.js')).default;
 const Whiteboard = (await import('../src/models/Whiteboard.js')).default;
 const { connected, createUser, emitAck, once, sleep, startTestServer } = await import('./helpers.js');
 
-let srv, teacher, s1, s2, meeting;
+let srv, teacher, s1, meeting;
 const sock = {};
 
 beforeAll(async () => {
@@ -22,10 +22,9 @@ beforeAll(async () => {
   srv = await startTestServer();
   teacher = await createUser(srv.app, { role: 'teacher', name: 'Prof Rao' });
   s1 = await createUser(srv.app, { role: 'student', name: 'Ira' });
-  s2 = await createUser(srv.app, { role: 'student', name: 'Kabir' });
   const res = await request(srv.app).post('/api/meetings').set(teacher.auth).send({ type: 'instant', title: 'Seminar', waitingRoom: false });
   meeting = res.body.meeting;
-  for (const [key, u] of [['host', teacher], ['s1', s1], ['s2', s2]]) {
+  for (const [key, u] of [['host', teacher], ['s1', s1]]) {
     const tok = await request(srv.app).post(`/api/meetings/${meeting.code}/join`).set(u.auth).send({});
     const s = srv.connect(u.accessToken);
     await connected(s);
@@ -68,15 +67,15 @@ describe('chat', () => {
   });
 
   it('keeps markup as plain text and rejects empty or oversized messages', async () => {
-    const got = once(sock.s2, 'chat:message');
+    const got = once(sock.host, 'chat:message');
     await emitAck(sock.s1, 'chat:send', { text: '<img src=x onerror=alert(1)>' });
     expect((await got).text).toBe('<img src=x onerror=alert(1)>'); // stored verbatim, rendered as text by the client
     expect((await emitAck(sock.s1, 'chat:send', { text: '   ' })).error.code).toBe('empty_message');
     expect((await emitAck(sock.s1, 'chat:send', { text: 'x'.repeat(2001) })).ok).toBe(false);
   });
 
-  it('serves history to late joiners and lets the host delete a message', async () => {
-    const h = await emitAck(sock.s2, 'chat:history');
+  it('serves history (e.g. after a reconnect) and lets the host delete a message', async () => {
+    const h = await emitAck(sock.s1, 'chat:history');
     expect(h.messages.map((m) => m.text)).toEqual(['Is question 3 about limits?', '<img src=x onerror=alert(1)>']);
     const target = h.messages[1].id;
     expect((await emitAck(sock.s1, 'chat:delete', { id: target })).error.code).toBe('not_host');
@@ -84,7 +83,7 @@ describe('chat', () => {
     expect((await emitAck(sock.host, 'chat:delete', { id: target })).ok).toBe(true);
     expect(await deleted).toEqual({ id: target });
     expect((await ChatMessage.findById(target)).deletedAt).toBeTruthy();
-    expect((await emitAck(sock.s2, 'chat:history')).messages).toHaveLength(1);
+    expect((await emitAck(sock.s1, 'chat:history')).messages).toHaveLength(1);
   });
 
   it('host can limit chat to themselves', async () => {
@@ -96,7 +95,7 @@ describe('chat', () => {
 
   it('rate-limits floods', async () => {
     const results = [];
-    for (let i = 0; i < 14; i += 1) results.push(await emitAck(sock.s2, 'chat:send', { text: `spam ${i}` }));
+    for (let i = 0; i < 14; i += 1) results.push(await emitAck(sock.s1, 'chat:send', { text: `spam ${i}` }));
     expect(results.some((r) => r.error?.code === 'rate_limited')).toBe(true);
   });
 });
@@ -132,15 +131,15 @@ describe('whiteboard', () => {
   });
 
   it('relays live strokes without storing them', async () => {
-    const live = once(sock.s2, 'whiteboard:live');
+    const live = once(sock.host, 'whiteboard:live');
     await emitAck(sock.s1, 'whiteboard:live', { id: 'live-1234', tool: 'pen', color: '#000000', size: 3, points: [[0.4, 0.4]] });
     expect(await live).toMatchObject({ id: 'live-1234', author: s1.id });
-    const state = await emitAck(sock.s2, 'whiteboard:state');
+    const state = await emitAck(sock.host, 'whiteboard:state');
     expect(state.ops.some((o) => o.id === 'live-1234')).toBe(false);
   });
 
   it('erase (undo) is limited to the author or the host', async () => {
-    expect((await emitAck(sock.s2, 'whiteboard:erase', { id: 's1-stroke-1' })).error.code).toBe('not_author');
+    expect((await emitAck(sock.s1, 'whiteboard:erase', { id: 'host-stroke-1' })).error.code).toBe('not_author');
     const erased = once(sock.host, 'whiteboard:erased');
     expect((await emitAck(sock.s1, 'whiteboard:erase', { id: 's1-stroke-1' })).ok).toBe(true);
     expect(await erased).toEqual({ id: 's1-stroke-1' });
@@ -154,7 +153,7 @@ describe('whiteboard', () => {
     expect(doc.ops.map((o) => o.id).sort()).toEqual(['host-stroke-1', 's1-stroke-1']);
     expect(doc.ops.find((o) => o.id === 'host-stroke-1').flat).toEqual([0.1, 0.1, 0.2, 0.25, 0.3, 0.3]);
     expect((await emitAck(sock.s1, 'whiteboard:clear')).error.code).toBe('not_host');
-    const cleared = once(sock.s2, 'whiteboard:cleared');
+    const cleared = once(sock.s1, 'whiteboard:cleared');
     await emitAck(sock.host, 'whiteboard:clear');
     await cleared;
     expect((await emitAck(sock.s1, 'whiteboard:state')).ops).toEqual([]);
@@ -162,18 +161,19 @@ describe('whiteboard', () => {
 });
 
 describe('screen sharing', () => {
-  it('students need permission; only one person shares at a time; the host can take over', async () => {
+  it('the student needs permission; one person shares at a time; the teacher can take over', async () => {
     expect((await emitAck(sock.s1, 'screen:start')).error.code).toBe('screen_not_allowed');
     await emitAck(sock.host, 'host:permissions', { allowScreenShare: true });
     const state = once(sock.host, 'screen:state');
     expect((await emitAck(sock.s1, 'screen:start')).ok).toBe(true);
     expect(await state).toEqual({ userId: s1.id });
-    expect((await emitAck(sock.s2, 'screen:start')).error.code).toBe('screen_busy');
 
     const forced = once(sock.s1, 'screen:forceStop');
     expect((await emitAck(sock.host, 'screen:start')).ok).toBe(true);
     await forced;
     expect(rooms.get(meeting.id).screenSharer).toBe(teacher.id);
+    // The student cannot take the slot back from the teacher.
+    expect((await emitAck(sock.s1, 'screen:start')).error.code).toBe('screen_busy');
     await emitAck(sock.host, 'screen:stop');
     expect(rooms.get(meeting.id).screenSharer).toBe(null);
   });
@@ -181,9 +181,9 @@ describe('screen sharing', () => {
   it('the SFU only accepts a screen producer from the person holding the slot', async () => {
     const hostCaps = await emitAck(sock.host, 'mediasoup:getRouterRtpCapabilities');
     await emitAck(sock.host, 'mediasoup:join', { sessionId: 'sess-host-screen', rtpCapabilities: hostCaps.rtpCapabilities });
-    const caps = await emitAck(sock.s2, 'mediasoup:getRouterRtpCapabilities');
-    await emitAck(sock.s2, 'mediasoup:join', { sessionId: 'sess-s2-screen', rtpCapabilities: caps.rtpCapabilities });
-    const send = (await emitAck(sock.s2, 'mediasoup:createWebRtcTransport', { direction: 'send' })).transport;
+    const caps = await emitAck(sock.s1, 'mediasoup:getRouterRtpCapabilities');
+    await emitAck(sock.s1, 'mediasoup:join', { sessionId: 'sess-s1-screen', rtpCapabilities: caps.rtpCapabilities });
+    const send = (await emitAck(sock.s1, 'mediasoup:createWebRtcTransport', { direction: 'send' })).transport;
     const vp8 = {
       mid: '2',
       codecs: [{ mimeType: 'video/VP8', payloadType: 96, clockRate: 90000, parameters: {}, rtcpFeedback: [] }],
@@ -191,19 +191,19 @@ describe('screen sharing', () => {
       encodings: [{ ssrc: 5555 }],
       rtcp: { cname: 'scr' },
     };
-    const denied = await emitAck(sock.s2, 'mediasoup:produce', { transportId: send.id, kind: 'video', source: 'screen', rtpParameters: vp8 });
+    const denied = await emitAck(sock.s1, 'mediasoup:produce', { transportId: send.id, kind: 'video', source: 'screen', rtpParameters: vp8 });
     expect(denied.error.code).toBe('screen_not_claimed');
-    await emitAck(sock.s2, 'screen:start');
+    await emitAck(sock.s1, 'screen:start');
     const announced = once(sock.host, 'mediasoup:newProducer');
-    const ok = await emitAck(sock.s2, 'mediasoup:produce', { transportId: send.id, kind: 'video', source: 'screen', rtpParameters: vp8 });
+    const ok = await emitAck(sock.s1, 'mediasoup:produce', { transportId: send.id, kind: 'video', source: 'screen', rtpParameters: vp8 });
     expect(ok.ok).toBe(true);
     expect((await announced).source).toBe('screen');
 
     // Revoking permission ends a student's share and closes the producer.
-    const forced = once(sock.s2, 'screen:forceStop');
+    const forced = once(sock.s1, 'screen:forceStop');
     await emitAck(sock.host, 'host:permissions', { allowScreenShare: false });
     await forced;
-    expect(rooms.get(meeting.id).sfu.findProducer(s2.id, 'screen')).toBeUndefined();
+    expect(rooms.get(meeting.id).sfu.findProducer(s1.id, 'screen')).toBeUndefined();
   });
 
   it('a leaving sharer frees the slot', async () => {

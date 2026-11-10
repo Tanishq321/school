@@ -67,7 +67,7 @@ export function createApp() {
     res.json({
       requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION,
       mediaMode: workerPool.ready ? 'sfu' : 'p2p',
-      maxParticipantsNow: workerPool.ready ? env.SFU_MAX_PARTICIPANTS : env.P2P_MAX_PARTICIPANTS,
+      classSize: 2, // one teacher, one student
       appName: env.APP_NAME,
       recording: { enabled: env.RECORDING_ENABLED && workerPool.ready, retentionDays: env.RECORDING_RETENTION_DAYS, maxMinutes: env.RECORDING_MAX_MINUTES },
     });

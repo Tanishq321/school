@@ -55,7 +55,6 @@ const schema = z.object({
   TURN_SECRET: z.string().min(32).optional(),
   TURN_CREDENTIAL_TTL_SECONDS: z.coerce.number().int().min(300).max(86400).default(10800),
 
-  P2P_MAX_PARTICIPANTS: z.coerce.number().int().min(2).max(4).default(2),
 
   // ---- mediasoup SFU (Phase 2). Needs UDP/TCP ports reachable from browsers (not possible on Render).
   MEDIASOUP_ENABLED: bool.default(false),
@@ -67,7 +66,6 @@ const schema = z.object({
   MEDIASOUP_PORT_BASE: z.coerce.number().int().min(1024).max(65000).default(40000),
   MEDIASOUP_MAX_ROOMS_PER_WORKER: z.coerce.number().int().min(1).default(50),
   MEDIASOUP_MAX_INCOMING_BITRATE: z.coerce.number().int().min(100_000).default(1_500_000),
-  SFU_MAX_PARTICIPANTS: z.coerce.number().int().min(2).max(100).default(20),
   RECONNECT_GRACE_SECONDS: z.coerce.number().int().min(0).max(300).default(20),
   MEETING_IDLE_END_MINUTES: z.coerce.number().int().min(1).default(15),
   MEETING_EXPIRY_GRACE_MINUTES: z.coerce.number().int().min(0).default(60),

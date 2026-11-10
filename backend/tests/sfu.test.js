@@ -54,28 +54,36 @@ async function startMedia(s) {
 const media = {};
 const sfuOf = () => rooms.get(meeting.id).sfu;
 
-describe('SFU group meeting', () => {
-  it('meetings run in SFU mode with group capacity', async () => {
-    const res = await request(srv.app).post('/api/meetings').set(teacher.auth).send({ type: 'instant', title: 'Group class', waitingRoom: true });
+describe('SFU one-to-one class', () => {
+  it('meetings run through the media server, still one teacher and one student', async () => {
+    const res = await request(srv.app).post('/api/meetings').set(teacher.auth).send({ type: 'instant', title: 'Tutorial', waitingRoom: true });
     meeting = res.body.meeting;
     expect(meeting.mediaMode).toBe('sfu');
-    expect(meeting.effectiveMaxParticipants).toBe(20);
+    expect(meeting.effectiveMaxParticipants).toBe(2);
     const h = await joinAs(teacher, 'host');
     expect(h.meeting.mediaMode).toBe('sfu');
     const cfg = await request(srv.app).get('/api/config');
-    expect(cfg.body).toMatchObject({ mediaMode: 'sfu', maxParticipantsNow: 20 });
+    expect(cfg.body).toMatchObject({ mediaMode: 'sfu', classSize: 2 });
     const health = await request(srv.app).get('/api/health');
     expect(health.body).toMatchObject({ mediaMode: 'sfu', mediasoupWorkers: 1 });
+    // Group-only controls no longer exist.
+    for (const ev of ['waiting:admitAll', 'host:muteAll', 'participant:raiseHand', 'host:grantSpeak']) {
+      const r = await Promise.race([emitAck(sockets.host, ev, {}), new Promise((ok) => setTimeout(() => ok('no-handler'), 300))]);
+      expect(r).toBe('no-handler');
+    }
   });
 
-  it('host admits everyone at once; more than two people can be in the room', async () => {
+  it('the student is admitted; a second student is refused even by the host', async () => {
     await joinAs(s1, 's1');
-    await joinAs(s2, 's2');
-    const notice = once(sockets.s2, 'meeting:admitted');
-    const r = await emitAck(sockets.host, 'waiting:admitAll');
-    expect(r).toMatchObject({ ok: true, admitted: 2 });
-    const a = await notice;
-    expect(a.participants).toHaveLength(2);
+    const admitted = once(sockets.s1, 'meeting:admitted');
+    expect((await emitAck(sockets.host, 'waiting:admit', { userId: s1.id })).ok).toBe(true);
+    expect((await admitted).participants).toHaveLength(1);
+
+    const w = await joinAs(s2, 's2');
+    expect(w.status).toBe('waiting');
+    const full = await emitAck(sockets.host, 'waiting:admit', { userId: s2.id });
+    expect(full.error.code).toBe('meeting_full');
+    await emitAck(sockets.host, 'waiting:deny', { userId: s2.id });
   });
 
   it('rejects media operations from non-members and validates ownership of ids', async () => {
@@ -86,77 +94,50 @@ describe('SFU group meeting', () => {
 
     media.host = await startMedia(sockets.host);
     media.s1 = await startMedia(sockets.s1);
-    media.s2 = await startMedia(sockets.s2);
     expect(media.host.send.iceCandidates[0]).toMatchObject({ ip: '127.0.0.1', port: 44100 });
 
     const dup = await emitAck(sockets.host, 'mediasoup:createWebRtcTransport', { direction: 'send' });
     expect(dup.error.code).toBe('transport_exists');
-    // A student cannot use the host's transport id.
+    // The student cannot use the host's transport id.
     const steal = await emitAck(sockets.s1, 'mediasoup:produce', { transportId: media.host.send.id, kind: 'audio', source: 'mic', rtpParameters: opusParams(1) });
     expect(steal.ok).toBe(false);
     const wrongKind = await emitAck(sockets.s1, 'mediasoup:produce', { transportId: media.s1.send.id, kind: 'video', source: 'mic', rtpParameters: opusParams(2) });
     expect(wrongKind.ok).toBe(false);
   });
 
-  it('a new producer is announced to others, who can consume and resume it', async () => {
-    const announced = once(sockets.s2, 'mediasoup:newProducer');
+  it('a new producer is announced to the other side, who can consume and resume it', async () => {
+    const announced = once(sockets.host, 'mediasoup:newProducer');
     const p = await emitAck(sockets.s1, 'mediasoup:produce', { transportId: media.s1.send.id, kind: 'audio', source: 'mic', rtpParameters: opusParams(1111) });
     expect(p.error).toBeUndefined();
     media.s1.micId = p.id;
     const ann = await announced;
     expect(ann).toMatchObject({ producerId: p.id, userId: s1.id, kind: 'audio', source: 'mic' });
 
-    const c = await emitAck(sockets.s2, 'mediasoup:consume', { producerId: p.id });
+    const c = await emitAck(sockets.host, 'mediasoup:consume', { producerId: p.id });
     expect(c.ok).toBe(true);
     expect(c.consumer).toMatchObject({ producerId: p.id, kind: 'audio', userId: s1.id });
-    expect((await emitAck(sockets.s2, 'mediasoup:resumeConsumer', { consumerId: c.consumer.id })).ok).toBe(true);
-    const again = await emitAck(sockets.s2, 'mediasoup:consume', { producerId: p.id });
+    expect((await emitAck(sockets.host, 'mediasoup:resumeConsumer', { consumerId: c.consumer.id })).ok).toBe(true);
+    const again = await emitAck(sockets.host, 'mediasoup:consume', { producerId: p.id });
     expect(again.error.code).toBe('already_consuming');
-    // A late joiner's media join lists existing producers.
-    const caps = await emitAck(sockets.host, 'mediasoup:getRouterRtpCapabilities');
-    const rejoin = await emitAck(sockets.host, 'mediasoup:join', { sessionId: 'sess-host-2', rtpCapabilities: caps.rtpCapabilities });
-    expect(rejoin.resumed).toBe(false);
-    expect(rejoin.producers.map((x) => x.producerId)).toContain(p.id);
+    // Rejoining the media session lists existing producers.
+    const caps = await emitAck(sockets.s1, 'mediasoup:getRouterRtpCapabilities');
+    const hostRejoin = await emitAck(sockets.host, 'mediasoup:join', { sessionId: 'sess-host-2', rtpCapabilities: caps.rtpCapabilities });
+    expect(hostRejoin.resumed).toBe(false);
+    expect(hostRejoin.producers.map((x) => x.producerId)).toContain(p.id);
   });
 
-  it('host mute pauses the student’s mic on the server; mute-all reaches everyone', async () => {
+  it('host mute pauses the student’s mic on the server; the student may unmute again', async () => {
     const muted = once(sockets.s1, 'participant:mutedByHost');
     expect((await emitAck(sockets.host, 'host:mute', { userId: s1.id })).ok).toBe(true);
     await muted;
     expect(sfuOf().findProducer(s1.id, 'mic').paused).toBe(true);
-    // Self-unmute is allowed by default.
     expect((await emitAck(sockets.s1, 'mediasoup:resumeProducer', { producerId: media.s1.micId })).ok).toBe(true);
-    const m2 = once(sockets.s2, 'participant:mutedByHost');
-    await emitAck(sockets.host, 'host:muteAll');
-    await m2;
-    expect(sfuOf().findProducer(s1.id, 'mic').paused).toBe(true);
-    const notHost = await emitAck(sockets.s1, 'host:mute', { userId: s2.id });
+    expect(sfuOf().findProducer(s1.id, 'mic').paused).toBe(false);
+    const notHost = await emitAck(sockets.s1, "host:mute", { userId: s1.id });
     expect(notHost.error.code).toBe('not_host');
   });
 
-  it('with self-unmute off, students stay muted until the host lets them speak', async () => {
-    const perm = once(sockets.s1, 'meeting:permissions');
-    await emitAck(sockets.host, 'host:permissions', { allowSelfUnmute: false });
-    expect(await perm).toMatchObject({ allowSelfUnmute: false, allowScreenShare: false, allowDrawing: false, chatMode: 'everyone' });
-    const denied = await emitAck(sockets.s1, 'mediasoup:resumeProducer', { producerId: media.s1.micId });
-    expect(denied.error.code).toBe('unmute_not_allowed');
-
-    const hand = once(sockets.host, 'participant:updated');
-    await emitAck(sockets.s1, 'participant:raiseHand', { raised: true });
-    expect(await hand).toMatchObject({ userId: s1.id, handRaised: true, canSpeak: false });
-
-    const granted = once(sockets.s1, 'participant:speakPermission');
-    await emitAck(sockets.host, 'host:grantSpeak', { userId: s1.id, granted: true });
-    expect(await granted).toEqual({ canSpeak: true });
-    expect((await emitAck(sockets.s1, 'mediasoup:resumeProducer', { producerId: media.s1.micId })).ok).toBe(true);
-    expect(sfuOf().findProducer(s1.id, 'mic').paused).toBe(false);
-    // Producing a fresh mic while not allowed is forced into the paused state.
-    const p2 = await emitAck(sockets.s2, 'mediasoup:produce', { transportId: media.s2.send.id, kind: 'audio', source: 'mic', rtpParameters: opusParams(2222) });
-    expect(p2.paused).toBe(true);
-    await emitAck(sockets.host, 'host:permissions', { allowSelfUnmute: true });
-  });
-
-  it('locking blocks newcomers but not people already in the class', async () => {
+  it('locking blocks newcomers but not the student already in the class', async () => {
     const lockEvt = once(sockets.s1, 'meeting:locked');
     await emitAck(sockets.host, 'host:lock', { locked: true });
     expect(await lockEvt).toEqual({ locked: true });
@@ -168,20 +149,24 @@ describe('SFU group meeting', () => {
     await emitAck(sockets.host, 'host:lock', { locked: false });
   });
 
-  it('removing a participant closes their media, ends their session and bars rejoining', async () => {
+  it('removing the student closes their media, ends their session and bars rejoining', async () => {
     const removed = once(sockets.s1, 'meeting:removed');
-    const left = once(sockets.s2, 'participant:left');
-    const closed = once(sockets.s2, 'mediasoup:consumerClosed');
+    const left = once(sockets.host, 'participant:left');
     expect((await emitAck(sockets.host, 'host:remove', { userId: s1.id })).ok).toBe(true);
     await removed;
     expect(await left).toEqual({ userId: s1.id, reason: 'removed' });
-    expect((await closed).producerId).toBe(media.s1.micId);
     expect(sfuOf().peers.has(s1.id)).toBe(false);
     const rejoin = await request(srv.app).post(`/api/meetings/${meeting.code}/join`).set(s1.auth).send({});
     expect(rejoin.status).toBe(403);
     expect(rejoin.body.error.code).toBe('removed_from_meeting');
     const cantRemoveHost = await emitAck(sockets.host, 'host:remove', { userId: teacher.id });
     expect(cantRemoveHost.ok).toBe(false);
+  });
+
+  it('once the seat is free another student may take it', async () => {
+    const w = await joinAs(s2, 's2b');
+    expect(w.status).toBe('waiting');
+    expect((await emitAck(sockets.host, 'waiting:admit', { userId: s2.id })).ok).toBe(true);
   });
 
   it('ending the meeting closes the router', async () => {

@@ -108,7 +108,7 @@ describe('waiting room, admission and signalling', () => {
     expect(ice.iceServers.length).toBeGreaterThan(0);
   });
 
-  it('enforces the 1-to-1 capacity in Phase 1 even if the host admits', async () => {
+  it('enforces one student per class even if the host admits a second', async () => {
     const third = await socketFor(student2);
     const notice = once(host, 'waiting:updated');
     await emitAck(third, 'meeting:join', { joinToken: await joinToken(student2, meeting.code) });
@@ -189,6 +189,22 @@ describe('joining before the host', () => {
     expect(a.participants[0].userId).toBe(teacher.id);
   });
 
+  it('when two students arrive early, only the first gets the seat once the host starts', async () => {
+    const meeting = await newMeeting({ waitingRoom: false });
+    const first = await socketFor(student);
+    const second = await socketFor(student2);
+    await emitAck(first, 'meeting:join', { joinToken: await joinToken(student, meeting.code) });
+    await emitAck(second, 'meeting:join', { joinToken: await joinToken(student2, meeting.code) });
+    const admitted = once(first, 'meeting:admitted');
+    const full = once(second, 'waiting:status');
+    const host = await socketFor(teacher);
+    const h = await emitAck(host, 'meeting:join', { joinToken: await joinToken(teacher, meeting.code) });
+    expect((await admitted).participants.map((p) => p.userId)).toEqual([teacher.id]);
+    expect(await full).toEqual({ reason: 'meeting_full' });
+    expect(h.status).toBe('admitted');
+    await emitAck(host, 'meeting:end');
+  });
+
   it('REST /leave tells the user’s live session to leave; /api/config exposes only public policy', async () => {
     const meeting = await newMeeting({ waitingRoom: false });
     const host = await socketFor(teacher);
@@ -197,7 +213,7 @@ describe('joining before the host', () => {
     await request(srv.app).post(`/api/meetings/${meeting.code}/leave`).set(teacher.auth).expect(204);
     await forced;
     const cfg = await request(srv.app).get('/api/config').expect(200);
-    expect(cfg.body).toMatchObject({ requireEmailVerification: true, mediaMode: 'p2p', maxParticipantsNow: 2 });
+    expect(cfg.body).toMatchObject({ requireEmailVerification: true, mediaMode: 'p2p', classSize: 2 });
   });
 
   it('ends live meetings that sit empty past the idle limit', async () => {

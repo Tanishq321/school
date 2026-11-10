@@ -20,6 +20,7 @@ const { workerPool } = await import('../src/mediasoup/workerPool.js');
 const { rooms } = await import('../src/sockets/realtime.js');
 const recordingService = await import('../src/services/recordingService.js');
 const Recording = (await import('../src/models/Recording.js')).default;
+const Meeting = (await import('../src/models/Meeting.js')).default;
 const env = (await import('../src/config/env.js')).default;
 const { devOutbox } = await import('../src/services/mailer.js');
 const { connected, createUser, emitAck, once, sleep, startTestServer } = await import('./helpers.js');
@@ -91,9 +92,16 @@ describe('class invitations, calendar and notes', () => {
     const res = await request(srv.app)
       .post('/api/meetings')
       .set(teacher.auth)
-      .send({ type: 'scheduled', title: 'Seminar on Ethics', scheduledStart: start.toISOString(), durationMinutes: 45, invitees: [invitee.email.toUpperCase(), invitee.email, 'not-registered@example.test'] })
+      .send({ type: 'scheduled', title: 'Seminar on Ethics', scheduledStart: start.toISOString(), durationMinutes: 45, invitees: [invitee.email.toUpperCase()] })
       .expect(201);
-    expect(res.body.meeting.invitees).toEqual([invitee.email, 'not-registered@example.test']);
+    expect(res.body.meeting.invitees).toEqual([invitee.email]);
+    // One-to-one: a class has exactly one student.
+    const two = await request(srv.app)
+      .post('/api/meetings')
+      .set(teacher.auth)
+      .send({ type: 'scheduled', title: 'Too many', scheduledStart: start.toISOString(), invitees: [invitee.email, 'someone@example.test'] })
+      .expect(400);
+    expect(two.body.error.message).toMatch(/one student/);
     const mail = [...devOutbox].reverse().find((m) => m.to === invitee.email);
     expect(mail.subject).toContain('Seminar on Ethics');
     expect(mail.attachments[0].content).toMatch(/BEGIN:VCALENDAR[\s\S]*DTSTART:\d{8}T\d{6}Z[\s\S]*END:VEVENT/);
@@ -130,17 +138,18 @@ describe('class invitations, calendar and notes', () => {
 
 describe('recording', () => {
   it('only the host may record; everyone sees the state and is asked for consent', async () => {
-    const res = await request(srv.app).post('/api/meetings').set(teacher.auth).send({ type: 'instant', title: 'Recorded tutorial', waitingRoom: true, invitees: [invitee.email] });
+    const res = await request(srv.app).post('/api/meetings').set(teacher.auth).send({ type: 'instant', title: 'Recorded tutorial', waitingRoom: true, invitees: [student.email] });
     meeting = res.body.meeting;
     const h = await joinAs(teacher, 'host');
     expect(h.recording).toMatchObject({ active: false, available: true });
+    // The invited student skips the waiting room.
     const s = await joinAs(student, 'stu');
-    expect(s.status).toBe('waiting');
-    await emitAck(sockets.host, 'waiting:admit', { userId: student.id });
-    // invited guests skip the waiting room
+    expect(s.status).toBe('admitted');
+    // Someone else is held in the waiting room and cannot be admitted: the seat is taken.
     const g = await joinAs(invitee, 'guest');
-    expect(g.status).toBe('admitted');
-    await emitAck(sockets.guest, 'meeting:leave');
+    expect(g.status).toBe('waiting');
+    expect((await emitAck(sockets.host, 'waiting:admit', { userId: invitee.id })).error.code).toBe('meeting_full');
+    await emitAck(sockets.host, 'waiting:deny', { userId: invitee.id });
 
     await joinMedia(sockets.host);
     await joinMedia(sockets.stu);
@@ -244,7 +253,9 @@ describe('recording', () => {
     expect(one.body.recording.consent).toBeUndefined();
     const spb = await request(srv.app).post(`/api/recordings/${recordingId}/playback`).set(student.auth).expect(200);
     await request(srv.app).get(spb.body.mediaUrl).set('Range', 'bytes=0-99').expect(206);
-    // invited (but absent) guests see shared recordings too; strangers never do
+    // A student who was invited but missed the class can watch a shared recording too; strangers never.
+    expect((await request(srv.app).get('/api/recordings').set(invitee.auth)).body.recordings).toEqual([]);
+    await Meeting.updateOne({ _id: meeting.id }, { $set: { invitees: [invitee.email] } });
     expect((await request(srv.app).get('/api/recordings').set(invitee.auth)).body.recordings).toHaveLength(1);
     expect((await request(srv.app).get('/api/recordings').set(outsider.auth)).body.recordings).toEqual([]);
     await request(srv.app).post(`/api/recordings/${recordingId}/playback`).set(outsider.auth).expect(404);

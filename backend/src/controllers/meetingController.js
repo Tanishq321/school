@@ -67,7 +67,7 @@ export async function participants(req, res) {
   const room = rooms.get(String(meeting._id));
   const isHost = String(meeting.host._id) === req.user.id;
   if (!isHost && !room?.members.has(req.user.id)) throw forbidden('Join the meeting to see participants');
-  res.json({ participants: room ? [...room.members.values()].map((m) => publicMember(m, room)) : [] });
+  res.json({ participants: room ? [...room.members.values()].map((m) => publicMember(m)) : [] });
 }
 
 export async function attendanceReport(req, res) {

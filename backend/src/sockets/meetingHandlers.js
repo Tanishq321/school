@@ -22,11 +22,9 @@ const schemas = {
   join: z.object({ joinToken: z.string().min(10).max(2000) }),
   userTarget: z.object({ userId: objectId }),
   mediaState: z.object({ audio: z.boolean(), video: z.boolean() }),
-  hand: z.object({ raised: z.boolean() }),
   lock: z.object({ locked: z.boolean() }),
   permissions: z
     .object({
-      allowSelfUnmute: z.boolean(),
       allowScreenShare: z.boolean(),
       allowDrawing: z.boolean(),
       chatMode: z.enum(['everyone', 'host']),
@@ -34,7 +32,6 @@ const schemas = {
     .partial()
     .strict()
     .refine((p) => Object.keys(p).length > 0, 'Nothing to change'),
-  grantSpeak: z.object({ userId: objectId, granted: z.boolean() }),
   signal: z.object({
     to: objectId,
     data: z
@@ -144,7 +141,7 @@ export function registerMeetingHandlers(io, socket) {
   }
 
   const notifyHosts = (room) => io.to(room.hostKey).emit('waiting:updated', { waiting: waitingList(room) });
-  const broadcastMember = (room, member) => io.to(room.key).emit('participant:updated', publicMember(member, room));
+  const broadcastMember = (room, member) => io.to(room.key).emit('participant:updated', publicMember(member));
 
   function meetingInfo(room, meeting) {
     return {
@@ -165,8 +162,8 @@ export function registerMeetingHandlers(io, socket) {
   function admittedPayload(room, member, meeting, extra = {}) {
     return {
       status: 'admitted',
-      self: publicMember(member, room),
-      participants: [...room.members.values()].filter((m) => m.userId !== member.userId).map((m) => publicMember(m, room)),
+      self: publicMember(member),
+      participants: [...room.members.values()].filter((m) => m.userId !== member.userId).map((m) => publicMember(m)),
       waiting: member.isHost ? waitingList(room) : [],
       meeting: meetingInfo(room, meeting),
       recording: recordingState(room, member.userId),
@@ -177,8 +174,9 @@ export function registerMeetingHandlers(io, socket) {
 
   async function admit(room, sock, meeting, { isHost }) {
     const u = sock.data.user;
-    if (!isHost && room.members.size >= room.settings.maxParticipants) {
-      throw new AppError(409, 'meeting_full', `This meeting is full (${room.settings.maxParticipants} people max).`);
+    // One-to-one: besides the teacher, only one student may be in the room at a time.
+    if (!isHost && [...room.members.values()].some((m) => !m.isHost && m.userId !== u.id)) {
+      throw new AppError(409, 'meeting_full', 'This class already has its student. It is one-to-one.');
     }
     const member = {
       userId: u.id,
@@ -192,8 +190,6 @@ export function registerMeetingHandlers(io, socket) {
       joinedAt: new Date(),
       attendanceId: null,
       graceTimer: null,
-      handRaisedAt: null,
-      speakGranted: false,
     };
     room.members.set(u.id, member);
     onMemberJoined(room, member);
@@ -205,7 +201,7 @@ export function registerMeetingHandlers(io, socket) {
     sock.data.meetingId = room.meetingId;
     sock.data.status = 'admitted';
     member.attendanceId = await attendance.startSession({ meetingId: room.meetingId, userId: u.id, isHost });
-    sock.to(room.key).emit('participant:joined', publicMember(member, room));
+    sock.to(room.key).emit('participant:joined', publicMember(member));
     if (room.recording) io.to(room.hostKey).emit('recording:consents', { consents: consentSummary(room) });
     Meeting.updateOne({ _id: room.meetingId }, { $set: { lastActiveAt: new Date() } }).catch(() => {});
     return admittedPayload(room, member, meeting);
@@ -240,7 +236,7 @@ export function registerMeetingHandlers(io, socket) {
     if (member.isHost) socket.join(room.hostKey);
     socket.data.meetingId = room.meetingId;
     socket.data.status = 'admitted';
-    socket.to(room.key).emit('participant:reconnected', publicMember(member, room));
+    socket.to(room.key).emit('participant:reconnected', publicMember(member));
     return admittedPayload(room, member, meeting, { resumed: true });
   }
 
@@ -372,25 +368,6 @@ export function registerMeetingHandlers(io, socket) {
     return {};
   });
 
-  on('waiting:admitAll', null, async () => {
-    const { room } = requireHost();
-    let admitted = 0;
-    let full = false;
-    for (const id of [...room.waiting.keys()]) {
-      try {
-        await admitWaiting(room, id);
-        admitted += 1;
-      } catch (err) {
-        if (err.code === 'meeting_full') {
-          full = true;
-          break;
-        }
-      }
-    }
-    notifyHosts(room);
-    return { admitted, full };
-  });
-
   on('waiting:deny', schemas.userTarget, async ({ userId }) => {
     const { room } = requireHost();
     const entry = room.waiting.get(userId);
@@ -414,7 +391,7 @@ export function registerMeetingHandlers(io, socket) {
     const mic = room.sfu?.findProducer(target.userId, 'mic');
     if (mic && !mic.paused) await mic.pause();
     target.audio = false;
-    io.to(target.socketId).emit('participant:mutedByHost', { canSpeak: room.canSpeak(target) });
+    io.to(target.socketId).emit('participant:mutedByHost', {});
     broadcastMember(room, target);
   }
 
@@ -422,13 +399,6 @@ export function registerMeetingHandlers(io, socket) {
     const { room } = requireHost();
     await muteMember(room, requireTarget(room, userId));
     audit('meeting.mute', { actor: user.id, targetType: 'user', targetId: userId, meta: { meeting: room.meetingId } });
-    return {};
-  });
-
-  on('host:muteAll', null, async () => {
-    const { room } = requireHost();
-    for (const m of room.members.values()) if (!m.isHost) await muteMember(room, m);
-    audit('meeting.mute_all', { actor: user.id, targetType: 'meeting', targetId: room.meetingId });
     return {};
   });
 
@@ -465,7 +435,6 @@ export function registerMeetingHandlers(io, socket) {
       { _id: room.meetingId },
       { $set: Object.fromEntries(Object.entries(changes).map(([k, v]) => [`settings.${k}`, v])) },
     );
-    if (changes.allowSelfUnmute === false) for (const m of room.members.values()) m.speakGranted = false;
     // Withdrawing screen-share permission ends a student's share immediately.
     const sharer = room.screenSharer && room.members.get(room.screenSharer);
     if (changes.allowScreenShare === false && sharer && !sharer.isHost) stopScreenShare(io, room, { force: true });
@@ -474,38 +443,11 @@ export function registerMeetingHandlers(io, socket) {
     return {};
   });
 
-  /** Let one participant speak while self-unmute is off (e.g. after they raise a hand). */
-  on('host:grantSpeak', schemas.grantSpeak, async ({ userId, granted }) => {
-    const { room } = requireHost();
-    const target = requireTarget(room, userId);
-    target.speakGranted = granted;
-    if (granted) target.handRaisedAt = null;
-    if (!granted) await muteMember(room, target);
-    io.to(target.socketId).emit('participant:speakPermission', { canSpeak: room.canSpeak(target) });
-    broadcastMember(room, target);
-    return {};
-  });
-
-  on('host:lowerHand', schemas.userTarget, async ({ userId }) => {
-    const { room } = requireHost();
-    const target = requireTarget(room, userId);
-    target.handRaisedAt = null;
-    broadcastMember(room, target);
-    return {};
-  });
-
-  on('participant:raiseHand', schemas.hand, async ({ raised }) => {
-    const { room, member } = requireMember();
-    member.handRaisedAt = raised ? new Date() : null;
-    broadcastMember(room, member);
-    return {};
-  });
-
   // ================================================================ media state & P2P signalling
 
   on('media:state', schemas.mediaState, async ({ audio, video }) => {
     const { room, member } = requireMember();
-    member.audio = audio && room.canSpeak(member);
+    member.audio = audio;
     member.video = video;
     socket.to(room.key).emit('participant:mediaState', { userId: user.id, audio: member.audio, video });
     return {};
@@ -599,9 +541,7 @@ export function registerMeetingHandlers(io, socket) {
       if (input.source === 'screen' && room.screenSharer !== user.id) {
         throw forbidden('Start screen sharing first', 'screen_not_claimed');
       }
-      // Muted-by-policy participants may publish their mic only in the paused state.
-      const paused = input.paused || (input.source === 'mic' && !room.canSpeak(member));
-      const producer = await sfu.produce(user.id, { ...input, paused });
+      const producer = await sfu.produce(user.id, { ...input, paused: Boolean(input.paused) });
       if (input.source === 'mic') member.audio = !producer.paused;
       if (input.source === 'camera') member.video = true;
       socket.to(room.key).emit('participant:mediaState', { userId: user.id, audio: member.audio, video: member.video });
@@ -630,9 +570,6 @@ export function registerMeetingHandlers(io, socket) {
     async ({ producerId }) => {
       const { room, member, sfu } = await sfuCtx();
       const p = sfu.producer(user.id, producerId);
-      if (p.appData.source === 'mic' && !room.canSpeak(member)) {
-        throw forbidden('The host has turned off unmuting. Raise your hand to ask to speak.', 'unmute_not_allowed');
-      }
       await p.resume();
       if (p.appData.source === 'mic') member.audio = true;
       socket.to(room.key).emit('participant:mediaState', { userId: user.id, audio: member.audio, video: member.video });

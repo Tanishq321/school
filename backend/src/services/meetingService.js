@@ -30,9 +30,9 @@ export async function sendInvitations(meeting, hostName, emails) {
   }
 }
 
-/** With the SFU running, meetings scale to SFU_MAX_PARTICIPANTS; without it, media is peer-to-peer (1-to-1). */
-export const effectiveCapacity = (meeting) =>
-  Math.min(meeting.settings?.maxParticipants ?? 2, workerPool.ready ? env.SFU_MAX_PARTICIPANTS : env.P2P_MAX_PARTICIPANTS);
+/** Every class is one-to-one: the teacher (host) and exactly one student. Enforced on the server. */
+export const CLASS_SIZE = 2;
+export const effectiveCapacity = () => CLASS_SIZE;
 
 export const inviteTokenFor = (meeting) => hmac(env.INVITE_SECRET, `${meeting._id}.${meeting.inviteNonce}`).slice(0, 32);
 export const inviteUrlFor = (meeting) => `${env.APP_URL}/m/${meeting.code}?invite=${inviteTokenFor(meeting)}`;
@@ -86,13 +86,11 @@ export async function createMeeting(user, input) {
     durationMinutes,
     scheduledEnd: new Date(start.getTime() + durationMinutes * 60_000),
     settings: {
-      allowSelfUnmute: input.allowSelfUnmute ?? true,
       allowScreenShare: input.allowScreenShare ?? false,
       allowDrawing: input.allowDrawing ?? false,
       chatMode: input.chatMode ?? 'everyone',
       saveChat: input.saveChat ?? true,
       waitingRoom: input.waitingRoom ?? true,
-      maxParticipants: input.maxParticipants ?? 20,
       hasPassword: Boolean(input.password),
       passwordHash: input.password ? await bcrypt.hash(input.password, 10) : undefined,
     },
@@ -163,8 +161,7 @@ export async function updateMeeting(meeting, input, actor) {
     meeting.scheduledEnd = new Date(meeting.scheduledStart.getTime() + meeting.durationMinutes * 60_000);
   }
   if (input.waitingRoom !== undefined) meeting.settings.waitingRoom = input.waitingRoom;
-  if (input.maxParticipants !== undefined) meeting.settings.maxParticipants = input.maxParticipants;
-  for (const k of ['allowSelfUnmute', 'allowScreenShare', 'allowDrawing', 'chatMode', 'saveChat']) {
+  for (const k of ['allowScreenShare', 'allowDrawing', 'chatMode', 'saveChat']) {
     if (input[k] !== undefined) meeting.settings[k] = input[k];
   }
   if (input.password !== undefined) {

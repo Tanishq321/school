@@ -20,7 +20,8 @@ const codeParams = z.object({
     }),
 });
 
-const invitees = z.array(z.email('Each guest needs a valid email address').max(254)).max(100, 'Up to 100 guests per class');
+// One-to-one classes: at most one invited student.
+const invitees = z.array(z.email('Enter a valid email address').max(254)).max(1, 'A class has one student: invite one email address');
 
 const meetingPassword = z.string().min(4, 'Meeting password must be at least 4 characters').max(64);
 
@@ -33,8 +34,6 @@ const createBody = z
     durationMinutes: z.number().int().min(5).max(600).optional(),
     password: meetingPassword.optional(),
     waitingRoom: z.boolean().optional(),
-    maxParticipants: z.number().int().min(2).max(100).optional(),
-    allowSelfUnmute: z.boolean().optional(),
     allowScreenShare: z.boolean().optional(),
     allowDrawing: z.boolean().optional(),
     chatMode: z.enum(['everyone', 'host']).optional(),
@@ -52,8 +51,6 @@ const updateBody = z
     durationMinutes: z.number().int().min(5).max(600).optional(),
     password: meetingPassword.nullable().optional(),
     waitingRoom: z.boolean().optional(),
-    maxParticipants: z.number().int().min(2).max(100).optional(),
-    allowSelfUnmute: z.boolean().optional(),
     allowScreenShare: z.boolean().optional(),
     allowDrawing: z.boolean().optional(),
     chatMode: z.enum(['everyone', 'host']).optional(),

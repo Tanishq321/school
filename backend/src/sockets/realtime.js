@@ -29,7 +29,7 @@ export class Room {
     this.waiting = new Map(); // userId -> { userId, name, socketId, reason, since }
     this.admitted = new Set(); // userIds approved at least once (no re-approval after reconnect)
     this.emptySince = Date.now();
-    this.settings = { waitingRoom: true, maxParticipants: 2 };
+    this.settings = { waitingRoom: true, maxParticipants: 2 }; // teacher + one student
     // 'sfu' when mediasoup is running on this server, otherwise 1-to-1 peer-to-peer.
     this.mode = workerPool.ready ? 'sfu' : 'p2p';
     this.sfu = null;
@@ -37,7 +37,6 @@ export class Room {
     this.locked = Boolean(meeting.locked);
     this.banned = new Set();
     this.permissions = {
-      allowSelfUnmute: meeting.settings?.allowSelfUnmute ?? true,
       allowScreenShare: meeting.settings?.allowScreenShare ?? false,
       allowDrawing: meeting.settings?.allowDrawing ?? false,
       chatMode: meeting.settings?.chatMode ?? 'everyone',
@@ -89,10 +88,6 @@ export class Room {
     return this._sfuPromise;
   }
 
-  canSpeak(member) {
-    return member.isHost || this.permissions.allowSelfUnmute || Boolean(member.speakGranted);
-  }
-
   get key() {
     return `meeting:${this.meetingId}`;
   }
@@ -112,7 +107,7 @@ export function getOrCreateRoom(meeting) {
   return room;
 }
 
-export const publicMember = (m, room) => ({
+export const publicMember = (m) => ({
   userId: m.userId,
   name: m.name,
   role: m.role,
@@ -121,9 +116,6 @@ export const publicMember = (m, room) => ({
   video: m.video,
   connected: m.connected,
   joinedAt: m.joinedAt,
-  handRaised: Boolean(m.handRaisedAt),
-  handRaisedAt: m.handRaisedAt || null,
-  canSpeak: room ? room.canSpeak(m) : true,
 });
 
 export const waitingList = (room) =>
