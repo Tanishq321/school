@@ -19,6 +19,18 @@ const userSchema = new mongoose.Schema(
       gradeLevel: { type: String, maxlength: 50, default: '' },
     },
     lastLoginAt: Date,
+    // Account protection
+    failedLogins: { type: Number, default: 0, select: false },
+    lockedUntil: { type: Date, select: false },
+    sessionsValidAfter: Date, // access tokens issued before this are refused (sign out everywhere)
+    twoFactor: {
+      enabled: { type: Boolean, default: false },
+      enabledAt: Date,
+      secret: { type: String, select: false }, // sealed (AES-256-GCM)
+      pendingSecret: { type: String, select: false },
+      lastStep: { type: Number, default: -1, select: false }, // replay guard
+      recoveryHashes: { type: [String], default: [], select: false },
+    },
   },
   { timestamps: true },
 );
@@ -29,6 +41,10 @@ userSchema.set('toJSON', {
     delete ret._id;
     delete ret.__v;
     delete ret.passwordHash;
+    delete ret.failedLogins;
+    delete ret.lockedUntil;
+    delete ret.sessionsValidAfter;
+    ret.twoFactor = { enabled: Boolean(ret.twoFactor?.enabled), enabledAt: ret.twoFactor?.enabledAt };
     if (ret.role !== 'teacher') delete ret.teacherProfile;
     if (ret.role !== 'student') delete ret.studentProfile;
     return ret;

@@ -11,6 +11,10 @@ import logger from './utils/logger.js';
 import authRoutes from './routes/authRoutes.js';
 import meetingRoutes, { diagnosticsRouter } from './routes/meetingRoutes.js';
 import recordingRoutes from './routes/recordingRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
+import { httpMetrics, renderPrometheus } from './services/metrics.js';
+import { getIo } from './sockets/realtime.js';
+import { safeEqual } from './utils/crypto.js';
 import { globalLimiter } from './middleware/rateLimits.js';
 import { workerPool } from './mediasoup/workerPool.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
@@ -44,6 +48,14 @@ export function createApp() {
     next();
   });
   if (!env.isTest) app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/api/health' } }));
+  app.use(httpMetrics);
+  // Prometheus scrape endpoint: off unless METRICS_TOKEN is set; never public.
+  app.get('/metrics', (req, res) => {
+    const given = (req.get('authorization') || '').replace(/^Bearer /, '');
+    if (!env.METRICS_TOKEN || !safeEqual(given, env.METRICS_TOKEN)) return res.status(404).end();
+    res.type('text/plain; version=0.0.4').send(renderPrometheus(getIo()));
+    return undefined;
+  });
   app.use(cors({ origin: env.corsOrigins, credentials: true }));
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
@@ -77,6 +89,7 @@ export function createApp() {
   app.use('/api/auth', authRoutes);
   app.use('/api/meetings', meetingRoutes);
   app.use('/api/recordings', recordingRoutes);
+  app.use('/api/admin', adminRoutes);
   app.use('/api/diagnostics', diagnosticsRouter);
   app.use('/api', notFoundHandler);
 

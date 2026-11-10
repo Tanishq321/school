@@ -12,7 +12,10 @@ export async function requireAuth(req, _res, next) {
   const user = await User.findById(payload.sub).lean();
   if (!user) throw unauthorized('Account not found', 'invalid_token');
   if (user.status !== 'active') throw forbidden('This account is suspended', 'account_suspended');
-  req.user = { id: String(user._id), name: user.name, email: user.email, role: user.role, emailVerified: user.emailVerified };
+  if (user.sessionsValidAfter && payload.iat < Math.floor(user.sessionsValidAfter.getTime() / 1000)) {
+    throw unauthorized('You were signed out. Please sign in again.', 'invalid_token');
+  }
+  req.user = { id: String(user._id), name: user.name, email: user.email, role: user.role, emailVerified: user.emailVerified, twoFactor: Boolean(user.twoFactor?.enabled) };
   next();
 }
 

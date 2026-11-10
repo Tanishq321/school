@@ -39,6 +39,14 @@ const schema = z.object({
   MEETING_TOKEN_SECRET: z.string().min(32),
   INVITE_SECRET: z.string().min(32),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  // Account protection
+  LOGIN_MAX_FAILURES: z.coerce.number().int().min(3).max(50).default(5),
+  LOGIN_LOCK_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
+  TWO_FACTOR_ENC_KEY: z.string().min(32).optional(), // encrypts authenticator secrets at rest
+  // Origins used by the Android/iOS apps (e.g. capacitor://localhost,https://localhost). Empty = web only.
+  NATIVE_APP_ORIGINS: csv,
+  // Bearer token for GET /metrics (Prometheus). Unset = endpoint disabled.
+  METRICS_TOKEN: z.string().min(24).optional(),
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
   REQUIRE_EMAIL_VERIFICATION: bool.default(true),
 
@@ -108,7 +116,7 @@ if (env.NODE_ENV === 'production') {
   }
 }
 
-env.corsOrigins = env.CORS_ORIGINS.length ? env.CORS_ORIGINS : [new URL(env.APP_URL).origin];
+env.corsOrigins = [...new Set([...(env.CORS_ORIGINS.length ? env.CORS_ORIGINS : [new URL(env.APP_URL).origin]), ...env.NATIVE_APP_ORIGINS])];
 env.isProd = env.NODE_ENV === 'production';
 env.isTest = env.NODE_ENV === 'test';
 

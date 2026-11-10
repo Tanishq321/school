@@ -23,6 +23,9 @@ export function createSocketServer(httpServer) {
       const payload = verifyAccessToken(token);
       const user = await User.findById(payload.sub).lean();
       if (!user || user.status !== 'active') throw Object.assign(new Error('Account unavailable'), { code: 'unauthorized' });
+      if (user.sessionsValidAfter && payload.iat < Math.floor(user.sessionsValidAfter.getTime() / 1000)) {
+        throw Object.assign(new Error('Signed out'), { code: 'unauthorized' });
+      }
       if (env.REQUIRE_EMAIL_VERIFICATION && !user.emailVerified) {
         throw Object.assign(new Error('Please verify your email address first'), { code: 'email_not_verified' });
       }
