@@ -11,6 +11,7 @@ import logger from './utils/logger.js';
 import authRoutes from './routes/authRoutes.js';
 import meetingRoutes, { diagnosticsRouter } from './routes/meetingRoutes.js';
 import { globalLimiter } from './middleware/rateLimits.js';
+import { workerPool } from './mediasoup/workerPool.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 export function createApp() {
@@ -48,12 +49,25 @@ export function createApp() {
 
   app.get('/api/health', (_req, res) => {
     const dbUp = mongoose.connection.readyState === 1;
-    res.status(dbUp ? 200 : 503).json({ status: dbUp ? 'ok' : 'degraded', db: dbUp ? 'up' : 'down', uptime: Math.round(process.uptime()), turnConfigured: turnHosts.length > 0 });
+    const workers = workerPool.status();
+    const sfuDown = workerPool.enabled && !workers.some((w) => !w.closed);
+    res.status(dbUp && !sfuDown ? 200 : 503).json({
+      status: dbUp && !sfuDown ? 'ok' : 'degraded',
+      db: dbUp ? 'up' : 'down',
+      mediaMode: workerPool.ready ? 'sfu' : 'p2p',
+      mediasoupWorkers: workers.length,
+      uptime: Math.round(process.uptime()),
+      turnConfigured: turnHosts.length > 0,
+    });
   });
 
   // Public, non-sensitive client configuration.
   app.get('/api/config', (_req, res) => {
-    res.json({ requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION, maxParticipantsNow: env.P2P_MAX_PARTICIPANTS });
+    res.json({
+      requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION,
+      mediaMode: workerPool.ready ? 'sfu' : 'p2p',
+      maxParticipantsNow: workerPool.ready ? env.SFU_MAX_PARTICIPANTS : env.P2P_MAX_PARTICIPANTS,
+    });
   });
 
   app.use('/api', globalLimiter);

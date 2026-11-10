@@ -32,6 +32,7 @@ const createBody = z
     password: meetingPassword.optional(),
     waitingRoom: z.boolean().optional(),
     maxParticipants: z.number().int().min(2).max(100).optional(),
+    allowSelfUnmute: z.boolean().optional(),
   })
   .strict()
   .refine((b) => b.type === 'instant' || b.scheduledStart, { message: 'scheduledStart is required for scheduled meetings', path: ['scheduledStart'] });
@@ -45,6 +46,7 @@ const updateBody = z
     password: meetingPassword.nullable().optional(),
     waitingRoom: z.boolean().optional(),
     maxParticipants: z.number().int().min(2).max(100).optional(),
+    allowSelfUnmute: z.boolean().optional(),
     rotateInvite: z.boolean().optional(),
   })
   .strict();

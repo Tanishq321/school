@@ -35,7 +35,10 @@ const meetingSchema = new mongoose.Schema(
       passwordHash: { type: String, select: false },
       hasPassword: { type: Boolean, default: false },
       maxParticipants: { type: Number, min: 2, max: 100, default: 20 },
+      allowSelfUnmute: { type: Boolean, default: true },
     },
+    locked: { type: Boolean, default: false },
+    bannedUsers: { type: [mongoose.Schema.Types.ObjectId], default: [], select: false },
     inviteNonce: { type: String, required: true, select: false },
   },
   { timestamps: true },
@@ -49,6 +52,7 @@ meetingSchema.set('toJSON', {
     delete ret._id;
     delete ret.__v;
     delete ret.inviteNonce;
+    delete ret.bannedUsers;
     if (ret.settings) delete ret.settings.passwordHash;
     return ret;
   },

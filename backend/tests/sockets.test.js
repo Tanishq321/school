@@ -197,7 +197,7 @@ describe('joining before the host', () => {
     await request(srv.app).post(`/api/meetings/${meeting.code}/leave`).set(teacher.auth).expect(204);
     await forced;
     const cfg = await request(srv.app).get('/api/config').expect(200);
-    expect(cfg.body).toEqual({ requireEmailVerification: true, maxParticipantsNow: 2 });
+    expect(cfg.body).toEqual({ requireEmailVerification: true, mediaMode: 'p2p', maxParticipantsNow: 2 });
   });
 
   it('ends live meetings that sit empty past the idle limit', async () => {

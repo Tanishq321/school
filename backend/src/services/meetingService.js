@@ -5,11 +5,12 @@ import Attendance from '../models/Attendance.js';
 import { generateMeetingCode, hmac, randomToken, safeEqual } from '../utils/crypto.js';
 import { AppError, badRequest, forbidden, notFound } from '../utils/errors.js';
 import { closeRoom, rooms } from '../sockets/realtime.js';
+import { workerPool } from '../mediasoup/workerPool.js';
 import { audit } from './auditService.js';
 
+/** With the SFU running, meetings scale to SFU_MAX_PARTICIPANTS; without it, media is peer-to-peer (1-to-1). */
 export const effectiveCapacity = (meeting) =>
-  // Phase 1 media is peer-to-peer (mesh), so cap at P2P_MAX_PARTICIPANTS until the SFU lands (Phase 2).
-  Math.min(meeting.settings?.maxParticipants ?? 2, env.P2P_MAX_PARTICIPANTS);
+  Math.min(meeting.settings?.maxParticipants ?? 2, workerPool.ready ? env.SFU_MAX_PARTICIPANTS : env.P2P_MAX_PARTICIPANTS);
 
 export const inviteTokenFor = (meeting) => hmac(env.INVITE_SECRET, `${meeting._id}.${meeting.inviteNonce}`).slice(0, 32);
 export const inviteUrlFor = (meeting) => `${env.APP_URL}/m/${meeting.code}?invite=${inviteTokenFor(meeting)}`;
@@ -21,6 +22,7 @@ export function serializeForHost(meeting) {
     ...meeting.toJSON(),
     inviteUrl: inviteUrlFor(meeting),
     effectiveMaxParticipants: effectiveCapacity(meeting),
+    mediaMode: workerPool.ready ? 'sfu' : 'p2p',
     liveParticipants: rooms.get(String(meeting._id))?.members.size ?? 0,
   };
 }
@@ -62,6 +64,7 @@ export async function createMeeting(user, input) {
     durationMinutes,
     scheduledEnd: new Date(start.getTime() + durationMinutes * 60_000),
     settings: {
+      allowSelfUnmute: input.allowSelfUnmute ?? true,
       waitingRoom: input.waitingRoom ?? true,
       maxParticipants: input.maxParticipants ?? 20,
       hasPassword: Boolean(input.password),
@@ -75,7 +78,7 @@ export async function createMeeting(user, input) {
 
 export async function getByCode(code, { withSecrets = false } = {}) {
   const q = Meeting.findOne({ code }).populate('host', 'name role');
-  if (withSecrets) q.select('+inviteNonce +settings.passwordHash');
+  if (withSecrets) q.select('+inviteNonce +settings.passwordHash +bannedUsers');
   const meeting = await q;
   if (!meeting) throw notFound('Meeting not found. Check the code and try again.', 'meeting_not_found');
   return meeting;
@@ -94,6 +97,12 @@ export async function authorizeJoin(user, code, { password, invite } = {}) {
     throw new AppError(410, 'meeting_closed', `This meeting has ${meeting.status === 'cancelled' ? 'been cancelled' : 'ended'}.`);
   }
   const isHost = isHostOf(meeting, user.id);
+  if (!isHost && meeting.bannedUsers?.some((id) => String(id) === String(user.id))) {
+    throw new AppError(403, 'removed_from_meeting', 'The host removed you from this meeting.');
+  }
+  if (!isHost && meeting.locked && !(await Attendance.exists({ meeting: meeting._id, user: user.id }))) {
+    throw new AppError(423, 'meeting_locked', 'The host has locked this meeting. Ask them to unlock it.');
+  }
   if (!isHost && meeting.settings.hasPassword) {
     const inviteOk = invite && safeEqual(invite, inviteTokenFor(meeting));
     if (!inviteOk) {
@@ -120,6 +129,7 @@ export async function updateMeeting(meeting, input) {
   }
   if (input.waitingRoom !== undefined) meeting.settings.waitingRoom = input.waitingRoom;
   if (input.maxParticipants !== undefined) meeting.settings.maxParticipants = input.maxParticipants;
+  if (input.allowSelfUnmute !== undefined) meeting.settings.allowSelfUnmute = input.allowSelfUnmute;
   if (input.password !== undefined) {
     meeting.settings.hasPassword = Boolean(input.password);
     meeting.settings.passwordHash = input.password ? await bcrypt.hash(input.password, 10) : undefined;

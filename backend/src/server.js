@@ -6,11 +6,20 @@ import { createApp } from './app.js';
 import { createSocketServer } from './sockets/index.js';
 import { closeOrphanedSessions } from './services/attendanceService.js';
 import { startMeetingExpiryJob } from './services/meetingExpiryJob.js';
+import { workerPool } from './mediasoup/workerPool.js';
+import { handleWorkerDeath } from './sockets/realtime.js';
 
 async function main() {
   await connectDb();
   const closed = await closeOrphanedSessions();
   if (closed) logger.warn({ closed }, 'Closed attendance sessions left open by a previous process');
+
+  if (env.MEDIASOUP_ENABLED) {
+    workerPool.onWorkerDied = handleWorkerDeath;
+    await workerPool.start();
+  } else {
+    logger.info('mediasoup disabled: meetings use 1-to-1 peer-to-peer media');
+  }
 
   const app = createApp();
   const server = http.createServer(app);
@@ -29,6 +38,7 @@ async function main() {
     // to the next process and reclaim their seats.
     io.engine.close();
     server.close();
+    await workerPool.close();
     await disconnectDb().catch(() => {});
     process.exit(0);
   };
