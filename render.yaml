@@ -9,7 +9,10 @@ services:
     runtime: node
     plan: free
     region: singapore
-    buildCommand: cd frontend && npm ci --include=dev && npm run build && cd ../backend && npm ci --omit=dev
+    # Render has no UDP, so the mediasoup media server is never used here (MEDIASOUP_ENABLED=false).
+    # MEDIASOUP_WORKER_BIN makes `npm ci` skip downloading/compiling its native worker, which otherwise
+    # can take minutes and fail on Render's build machines.
+    buildCommand: cd frontend && npm ci --include=dev && npm run build && cd ../backend && MEDIASOUP_WORKER_BIN=/nonexistent npm ci --omit=dev
     startCommand: cd backend && node src/server.js
     healthCheckPath: /api/health
     autoDeploy: true

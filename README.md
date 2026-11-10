@@ -6,7 +6,7 @@ A video meeting and virtual classroom platform that runs entirely on infrastruct
 
 **Every class is one-to-one: one teacher, one student.** The server enforces it in both media modes.
 
-**Status: Phase 4 complete**: consent-based server-side recording with a private archive and player, email invitations with calendar files, a month calendar, a class ledger with notes, attendance and transcripts, on top of teacher controls, presentation, chat and whiteboard. See the [roadmap](#roadmap).
+**Status: Phase 5 complete** (administration, account security, monitoring, mobile app shells). Earlier phases: consent-based server-side recording with a private archive and player, email invitations with calendar files, a month calendar, a class ledger with notes, attendance and transcripts, on top of teacher controls, presentation, chat and whiteboard. See the [roadmap](#roadmap).
 
 The brand name lives in one place (`frontend/src/brand.js`, `APP_NAME` on the server); set `VITE_APP_NAME` / `APP_NAME` to rename it.
 
@@ -19,6 +19,26 @@ The brand name lives in one place (`frontend/src/brand.js`, `APP_NAME` on the se
 - Attendance recorded from real join/leave times (reconnects don't split sessions)
 - Connection test page: browser support, devices, ICE candidates, TURN allocation and a real relay loopback
 - Light/dark mode, responsive down to phones, accessible controls
+
+## Phase 5 additions
+
+- **Account security:**
+  - **Two-step sign-in** with any authenticator app (TOTP). Setup shows a QR code drawn on the device, and ten single-use recovery codes.
+  - **Lockout:** five wrong passwords or codes in a row lock sign-in for 15 minutes (`LOGIN_MAX_FAILURES`, `LOGIN_LOCK_MINUTES`). A password reset or an administrator clears it.
+  - **Devices:** members see where they are signed in and can sign any device out. Changing the password signs out every other device at once.
+- **Administration** (`npm run create-admin` makes the first administrator):
+  - **Overview:** classes in session, people, classes held, recordings and disk, two 14-day charts, system health and failed sign-ins.
+  - **People:** search, suspend / restore (takes effect immediately, live connections are dropped), change role, unlock, sign out everywhere.
+  - **Classes:** a register of who taught when and for how long; end a live class.
+  - **Audit trail:** every sign-in, failure, lockout, security change and administrator action, filterable.
+  - **Privacy by design:** administrators never see class titles, codes, chat, notes, boards or recordings.
+- **Monitoring:** a token-protected Prometheus endpoint (`/metrics`), with a scrape config and alert rules in [docs/monitoring.md](docs/monitoring.md).
+- **Android and iOS:** Capacitor projects in `frontend/android` and `frontend/ios`, camera/microphone permissions, and a token mode for apps. Not yet compiled or run on a device; see [docs/mobile-apps.md](docs/mobile-apps.md).
+- **Design:**
+  - Guilloché engraving (the interlaced line-work of banknotes and watch dials), generated mathematically, on the navigation spine, hero cards and sign-in screen.
+  - A metal **membership card** on the account page that tilts and catches the light.
+  - Recovery codes issued on a vellum certificate; brass skeleton loaders; foil lettering.
+  - A command palette (Ctrl/⌘ K) to jump anywhere or open a room from the keyboard.
 
 ## Phase 4 additions
 
@@ -100,7 +120,7 @@ docs/              architecture, setup, deployment, security, testing
 ## Tests
 
 ```bash
-cd backend && npm test                        # 65 API, socket, SFU and recording tests (needs ffmpeg)
+cd backend && npm test                        # 79 API, socket, SFU, recording and security tests (needs ffmpeg)
 cd frontend && npm run build && cd ../e2e && npm ci && node run-e2e.mjs   # P2P: direct + TURN relay
 E2E_SFU=1 node run-e2e.mjs     # through the SFU: direct, relay, one-student seat rule, real recording
 E2E_SPLIT=1 node run-e2e.mjs   # same, with Vercel-style split origins
@@ -116,8 +136,8 @@ See [docs/testing.md](docs/testing.md) for what is covered and what still needs 
 | 2 | mediasoup SFU, teacher controls (mute/remove/lock), premium redesign | ✅ done (group features later removed: classes are one-to-one) |
 | 3 | Screen sharing, chat, whiteboard, attendance export, classroom permissions | ✅ done |
 | 4 | Server-side recording (consent), archive & player, invitations, calendar, class history | ✅ done |
-| 5 | Admin dashboard, hardening, monitoring, Capacitor Android/iOS apps | next |
-| 6 | Production deployment, load tests, multi-server, disaster recovery | |
+| 5 | Admin console, two-step sign-in, lockout, devices, monitoring, Capacitor Android/iOS shells | ✅ done (apps not yet device-tested) |
+| 6 | Production deployment, load tests, multi-server, disaster recovery | next |
 
 ## Try it online (test deployment)
 
@@ -125,4 +145,4 @@ GitHub → Render (+ optional Vercel) + MongoDB Atlas: see [docs/deploy-render-v
 
 ## Docs
 
-[Architecture](docs/architecture.md) · [Setup](docs/setup.md) · [Deployment (VPS)](docs/deployment.md) · [Test deploy (Render/Vercel)](docs/deploy-render-vercel.md) · [Security](docs/security.md) · [Testing](docs/testing.md)
+[Architecture](docs/architecture.md) · [Setup](docs/setup.md) · [Deployment (VPS)](docs/deployment.md) · [Test deploy (Render/Vercel)](docs/deploy-render-vercel.md) · [Security](docs/security.md) · [Monitoring](docs/monitoring.md) · [Mobile apps](docs/mobile-apps.md) · [Testing](docs/testing.md)
