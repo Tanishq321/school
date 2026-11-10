@@ -19,6 +19,14 @@ Each test file uses a throwaway database. Coverage:
   - The final file is H.264 1280×720 + AAC with a poster, and raw tracks are cleaned up.
   - Access: private until shared. Range streaming returns 206 / 416. Tampered and cross-recording tokens get 401. Poster-only tokens can't stream. Attendees and invitees can watch only after sharing, and un-sharing revokes outstanding links. Outsiders never get access.
   - Delete removes the files. When nobody consents, nothing is kept. Ending the class stops and finalises. The retention sweep removes old recordings. A path-traversal guard is in place.
+- **security.test.js**:
+  - TOTP against the RFC 6238 test vector, base32 and sealing round trips, replay refusal.
+  - Lockout: locks after repeated failures even for the right password; an administrator unlocks; unknown emails never lock.
+  - Two-step sign-in: enrolment needs a valid code; secrets are stored sealed and recovery codes hashed; the password alone yields no session or cookie; wrong, replayed and forged challenges are refused; a recovery code works once; turning it off needs password and code.
+  - Devices: listing, revoking one device (its refresh token dies), nobody can revoke someone else's; changing the password kills the old access token and other devices but keeps this one.
+  - Native-app mode: refresh token in the body, no cookie, rotation, refused for browsers and foreign origins.
+  - Administration: closed to non-admins (401/403); the overview and class register never contain a class title or code; admins get 403 on class content; ending a class; search is regex-safe; suspension drops the live socket and blocks tokens and sign-in at once; self-suspension, self-demotion and unknown roles are refused; forced sign-out kills access and refresh tokens; the audit trail records administrator actions.
+  - Metrics: 404 without the token, Prometheus text with it, no personal data.
 - **sockets.test.js**: handshake auth (invalid token, unverified user), waiting room + host notifications, waiting users can't signal, non-hosts can't admit, admission events, signalling relayed only between members and tagged with sender, payload validation, media-state broadcast, ICE refresh, 1-to-1 capacity enforcement, join tokens bound to their user, reconnect grace period (attendance not split), seat freed after grace, host-only end, attendance closure and totals, joining before host + auto-admit, idle meeting auto-end.
 
 ## 2. End-to-end WebRTC tests (Puppeteer + Chrome + coturn)
@@ -36,16 +44,27 @@ It runs twice: **direct** and **TURN relay forced** (`iceTransportPolicy: relay`
 
 What this proves and what it doesn't: the WebRTC stack is real (ICE, DTLS, SRTP, VP8/Opus encode and decode, TURN allocation and relaying). The camera and microphone are Chrome's built-in fake capture devices (test pattern + beep), because the CI machine has no camera. Both browsers run on one host. It does **not** replace testing on physical devices across real networks (below).
 
-## 3. Results of the last run (Phase 4)
+## 3. Results of the last run (Phase 5)
 
 | Suite | Result |
 |---|---|
-| Backend (Vitest): auth, meetings, sockets (incl. one-student rule, two early arrivals), SFU + host controls, chat / whiteboard / screen share, recording, invitations, calendar, class pages | 66 / 66 |
-| E2E peer-to-peer (`node run-e2e.mjs`): direct + TURN relay + **seat rule** (3 browsers: the second student can't be admitted until the first leaves) | 39 / 39 |
-| E2E split origins (`E2E_SPLIT=1`, Vercel-style proxy + direct sockets) | 39 / 39 |
+| Backend (Vitest): auth, meetings, sockets (incl. one-student rule, two early arrivals), SFU + host controls, chat / whiteboard / screen share, recording, invitations, calendar, class pages, **lockout, two-step sign-in, devices, administration, metrics** | 79 / 79 |
+| E2E peer-to-peer (`node run-e2e.mjs`): direct + TURN relay + **seat rule** (3 browsers: the second student can't be admitted until the first leaves) + **security and administration** | 47 / 47 |
+| E2E split origins (`E2E_SPLIT=1`, Vercel-style proxy + direct sockets), same scenarios | 47 / 47 |
 | E2E SFU (`E2E_SFU=1`): direct, relay, seat rule, **real recording** | 49 / 49 |
 
-New Phase 4 E2E scenario (`recording`, two real Chrome instances through the SFU, with simulcast):
+New Phase 5 E2E scenario (`security`, three real Chrome instances: teacher, student, administrator):
+1. The teacher turns on two-step sign-in in the UI. The test reads the setup key and computes real TOTP codes, as an authenticator app would. Ten recovery codes are shown.
+2. Signing in again stops at the code screen; a wrong code is refused, the right one signs in.
+3. Ctrl+K opens the command palette; typing and Enter navigates. A teacher who types `/admin` is sent home.
+4. Five wrong passwords lock the student's account.
+5. The administrator sees the teacher's live class on the overview, and the test asserts the page contains neither the class code nor its title.
+6. The administrator unlocks the student, suspends them (the student's open session is thrown out to the sign-in page) and restores them.
+7. The administrator ends the live class; the audit trail lists the administrator's actions, the lockout and the two-step change.
+
+**Not tested:** the Android and iOS projects (no SDK or device here; see mobile-apps.md), and Prometheus/alerting against a real Prometheus server (the endpoint's output format is tested).
+
+Phase 4 E2E scenario (`recording`, two real Chrome instances through the SFU, with simulcast):
 1. The teacher clicks *Record this class* → *Begin recording*.
 2. The red lamp appears for both people, and the student gets the consent dialog. The student chooses *Include me*: the dialog closes, their lamp reads *Included*, and the teacher's lamp shows "2 included".
 3. About 10 s of class pass, with a presentation in the middle. The teacher stops; the lamp disappears for the student.
@@ -73,6 +92,6 @@ These need physical hardware and separate networks. They have **not** been run y
 | Safari macOS | ☐ | ☐ | n/a | ☐ | ☐ | ☐ |
 | Chrome Android | ☐ | ☐ | ☐ | — | ☐ | ☐ |
 | Safari iOS 17+ | ☐ | ☐ | ☐ | — | ☐ | ☐ |
-| Capacitor Android / iOS | Phase 5 | | | | | |
+| Capacitor Android / iOS (see mobile-apps.md §5) | ☐ | ☐ | ☐ | — | ☐ | ☐ |
 
 Networks to cover: home Wi-Fi ↔ mobile data; corporate/school network that blocks UDP (should fall back to TURN over TCP 3478 or TURNS 5349); symmetric NAT (mobile carrier CGNAT).

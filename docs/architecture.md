@@ -138,5 +138,5 @@ browser ─SRTP─▶ mediasoup Router ──DirectTransport consumers (in-proce
 | 2 | mediasoup SFU, host controls (mute/remove/lock/permissions), premium redesign (group features since removed: one-to-one only) | Implemented and tested here (see testing.md) |
 | 3 | Screen share (SFU + P2P), chat (persisted, moderated), whiteboard (live strokes, undo/redo, persisted), attendance CSV, classroom permissions, landing page, sound cues | Implemented and tested here (see testing.md) |
 | 4 | Consent-based recording (mediasoup → DirectTransport → per-track files → FFmpeg MP4), archive & signed playback, invitations + .ics, calendar, class pages (notes, attendance, transcript), dark-first shell | Implemented and tested here (see testing.md) |
-| 5 | Admin dashboard, hardening, monitoring, Capacitor apps | Not started |
+| 5 | Admin console (accounts, register, audit; no class content), lockout, TOTP two-step sign-in, device sessions, Prometheus metrics, Capacitor Android/iOS shells | Implemented and tested here, except the mobile shells (not compiled or run on devices) |
 | 6 | Production deployment, load tests, multi-server, DR | Docs started (deployment.md) |

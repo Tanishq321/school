@@ -175,7 +175,9 @@ On two **physical devices on different networks** (e.g. laptop on home Wi-Fi + p
 - App logs: `pm2 logs video-platform-api` (JSON, pino). Install log rotation with `pm2 install pm2-logrotate`.
 - coturn: `/var/log/turnserver/turnserver.log`; Prometheus metrics on `127.0.0.1:9641`.
 - Health: `GET /api/health` (returns 503 if MongoDB is down). Point an uptime checker at `https://class.example.com/api/health`.
-- Audit trail: `auditlogs` collection (logins, failed logins, meeting create/start/end, admits/denies).
+- Audit trail: **Administration → Audit trail** in the app (or the `auditlogs` collection).
+- Metrics and alerts: see [monitoring.md](monitoring.md).
+- First administrator: `cd backend && ADMIN_EMAIL=you@example.com ADMIN_PASSWORD='<12+ chars>' npm run create-admin`, then sign in and turn on two-step sign-in.
 
 ## 12. Backups
 

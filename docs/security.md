@@ -63,10 +63,32 @@
 - Keep MongoDB, Node (4000) and coturn metrics (9641) bound to localhost.
 - Review `auditlogs` for `auth.refresh_reuse_detected` and bursts of `auth.login_failed` / `meeting.join_bad_password`.
 
+## Account protection and administration (Phase 5)
+
+- **Lockout:** `LOGIN_MAX_FAILURES` (5) consecutive wrong passwords or two-step codes lock sign-in for `LOGIN_LOCK_MINUTES` (15).
+  - Even the correct password is refused while locked.
+  - A password reset or an administrator's *Unlock* clears it. Unknown emails get the same generic answer and are never "locked".
+  - Trade-off: someone who knows a member's email can lock them out for 15 minutes at a time. The per-IP rate limit (20 attempts / 15 min) bounds this.
+- **Two-step sign-in (TOTP, RFC 6238):**
+  - The secret is generated on the server, shown once as a QR code (rendered in the browser, never sent to a QR service) and stored sealed with AES-256-GCM (`TWO_FACTOR_ENC_KEY`).
+  - After the password step the server issues only a 5-minute challenge, not a session.
+  - Codes are accepted one step either side for clock drift, and a used code can't be replayed.
+  - Ten recovery codes are shown once and stored hashed; each works once.
+  - Turning it off needs the password and a code.
+- **Sessions:**
+  - Members can list and revoke their devices.
+  - Changing or resetting the password, a suspension, a role change, or an administrator's *Sign out everywhere* invalidates refresh tokens **and** outstanding access tokens (`sessionsValidAfter`), and drops live sockets.
+- **Administrators** (role `admin`, created only with `npm run create-admin`):
+  - Can manage accounts, see the class register, end a class, and read the audit trail. Every action is itself audited.
+  - Cannot read class titles, codes, chat, notes, whiteboards or recordings: the admin API never returns them, and the class and recording endpoints refuse non-participants.
+  - Cannot suspend or demote themselves, and the last active administrator cannot be removed.
+- **Mobile apps:** identify with `X-Client-Platform: native`, receive the refresh token in the body, and must come from an origin in `NATIVE_APP_ORIGINS`. Browsers cannot use the body route.
+- **Metrics:** `/metrics` needs `METRICS_TOKEN` and exposes no personal data.
+
 ## Not yet implemented (planned)
 
-- Account lockout / CAPTCHA after repeated failures (rate limits only today) → Phase 5
-- Admin management of users, reports and logs UI → Phase 5
+- CAPTCHA on sign-in (lockout and rate limits only today)
 - Secure file uploads → arrive with features that need uploads (Phase 3+)
-- 2FA for teachers/admins → Phase 5
+- Enforcing two-step sign-in for administrators (the console warns; it is not yet mandatory)
+- Passkeys / WebAuthn
 - Redis-backed rate limits for multi-instance deployments → Phase 6

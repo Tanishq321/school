@@ -11,6 +11,7 @@
  *   cd e2e && npm install && node run-e2e.mjs
  */
 import { execSync, spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -25,7 +26,7 @@ const PORT = Number(process.env.E2E_PORT || 4100);
 const SPLIT = process.env.E2E_SPLIT === '1';
 // E2E_SFU=1 runs every call through the mediasoup SFU instead of peer-to-peer.
 const SFU = process.env.E2E_SFU === '1';
-const SCENARIOS = (process.env.E2E_SCENARIOS || (SFU ? 'direct,relay,seat,recording' : 'direct,relay,seat')).split(',');
+const SCENARIOS = (process.env.E2E_SCENARIOS || (SFU ? 'direct,relay,seat,recording' : 'direct,relay,seat,security')).split(',');
 const REC_DIR = path.join(ROOT, 'e2e', 'artifacts', 'recordings-tmp');
 const FRONT_PORT = PORT + 1;
 const BASE = SPLIT ? `http://localhost:${FRONT_PORT}` : `http://localhost:${PORT}`;
@@ -57,11 +58,7 @@ let backend;
 let backendLogs = '';
 const dbName = `vp_e2e_${Date.now()}`;
 
-function startBackend() {
-  return new Promise((resolve, reject) => {
-    backend = spawn(process.execPath, ['src/server.js'], {
-      cwd: path.join(ROOT, 'backend'),
-      env: {
+const backendEnv = () => ({
         ...process.env,
         ENV_FILE: '/nonexistent',
         NODE_ENV: 'development',
@@ -88,9 +85,12 @@ function startBackend() {
         RECORDING_ENABLED: SFU ? 'true' : 'false',
         RECORDINGS_DIR: REC_DIR,
         RECORDING_MIN_FREE_MB: '0',
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+        LOGIN_MAX_FAILURES: '4',
+});
+
+function startBackend() {
+  return new Promise((resolve, reject) => {
+    backend = spawn(process.execPath, ['src/server.js'], { cwd: path.join(ROOT, 'backend'), env: backendEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
     const onData = (d) => {
       backendLogs += d.toString();
       if (backendLogs.includes('API listening')) resolve();
@@ -452,10 +452,10 @@ async function apiRegister(name, email, role) {
   if (!v.ok) throw new Error(`verify ${email}: ${v.status}`);
 }
 
-async function uiLogin(page, email) {
+async function uiLogin(page, email, password = 'Classroom123') {
   await page.goto(`${BASE}/login`, { waitUntil: 'networkidle0' });
   await page.type('input[type="email"]', email);
-  await page.type('input[type="password"]', 'Classroom123');
+  await page.type('input[type="password"]', password);
   await clickText(page, 'button[type="submit"]', 'Sign in');
   await page.waitForFunction(() => document.body.innerText.includes('Join with a code'), { timeout: 15_000 });
 }
@@ -662,6 +662,163 @@ async function recordingScenario() {
   }
 }
 
+
+// ---------------------------------------------------------------- security & administration
+
+/** RFC 6238 code for a base32 secret (same algorithm as authenticator apps). */
+function totpCode(secretB32, stepOffset = 0) {
+  const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (const ch of secretB32.replace(/\s/g, '')) bits += A.indexOf(ch).toString(2).padStart(5, '0');
+  const key = Buffer.from(bits.match(/.{8}/g).map((b) => parseInt(b, 2)));
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000) + stepOffset));
+  const mac = crypto.createHmac('sha1', key).update(counter).digest();
+  const o = mac[19] & 15;
+  return String((((mac[o] & 127) << 24) | (mac[o + 1] << 16) | (mac[o + 2] << 8) | mac[o + 3]) % 1e6).padStart(6, '0');
+}
+
+async function securityScenario() {
+  const tag = Date.now() % 100000;
+  const tEmail = `sec.teacher.${tag}@example.test`;
+  const sEmail = `sec.student.${tag}@example.test`;
+  const aEmail = `steward.${tag}@example.test`;
+  await step('[security] create a teacher, a student and an administrator', async () => {
+    await apiRegister('Eleanor Whitcombe', tEmail, 'teacher');
+    await apiRegister('Felix Arden', sEmail, 'student');
+    execSync('node src/scripts/createAdmin.js', { cwd: path.join(ROOT, 'backend'), env: { ...backendEnv(), ADMIN_EMAIL: aEmail, ADMIN_PASSWORD: 'Classroom123456', ADMIN_NAME: 'House Steward' }, stdio: 'ignore' });
+  });
+  const T = await launch('sec-teacher');
+  const S = await launch('sec-student');
+  const A = await launch('sec-admin');
+  for (const b of [T, S, A]) b.page.on('dialog', (d) => d.accept());
+  let secret;
+  try {
+    await step('[security] teacher turns on two-step sign-in and receives recovery codes', async () => {
+      await uiLogin(T.page, tEmail);
+      await T.page.goto(`${BASE}/profile`, { waitUntil: 'networkidle0' });
+      await waitSel(T.page, '[data-testid="member-card"]');
+      await clickText(T.page, 'button', 'Turn on');
+      await waitSel(T.page, '[data-testid="totp-secret"]');
+      secret = await T.page.$eval('[data-testid="totp-secret"]', (e) => e.textContent.replace(/\s/g, ''));
+      await T.page.screenshot({ path: path.join(ART, 'security-setup.png') });
+      await T.page.type('[role="dialog"] input[inputmode="numeric"]', totpCode(secret));
+      await clickText(T.page, '[role="dialog"] button[type="submit"]', 'Turn on');
+      await waitSel(T.page, '[data-testid="recovery-codes"]');
+      const n = await T.page.$$eval('[data-testid="recovery-codes"] li', (l) => l.length);
+      if (n !== 10) throw new Error(`expected 10 recovery codes, saw ${n}`);
+      await T.page.screenshot({ path: path.join(ART, 'security-recovery-codes.png') });
+      await clickText(T.page, 'button', 'I have saved them');
+      await T.page.waitForFunction(() => document.querySelector('[data-testid="two-step-status"]')?.textContent === 'On', { timeout: 8000 });
+      await T.page.waitForSelector('[data-testid="devices"] li');
+      await sleep(600);
+      await T.page.screenshot({ path: path.join(ART, 'account.png'), fullPage: true });
+    });
+
+    await step('[security] signing in again needs the code; a wrong code is refused', async () => {
+      await T.page.click('button[aria-label="Sign out"]');
+      await T.page.waitForFunction(() => location.pathname === '/login');
+      await waitSel(T.page, 'input[type="email"]');
+      await T.page.type('input[type="email"]', tEmail);
+      await T.page.type('input[type="password"]', 'Classroom123');
+      await clickText(T.page, 'button[type="submit"]', 'Sign in');
+      await waitSel(T.page, '#otp');
+      await T.page.screenshot({ path: path.join(ART, 'security-second-step.png') });
+      await T.page.type('#otp', '000000');
+      await clickText(T.page, 'button[type="submit"]', 'Verify and sign in');
+      await T.page.waitForFunction(() => document.body.innerText.includes('That code is not right'), { timeout: 8000 });
+      await T.page.$eval('#otp', (e) => e.select());
+      await T.page.keyboard.press('Backspace');
+      await T.page.type('#otp', totpCode(secret, 1)); // next time step: unused, inside the drift window
+      await clickText(T.page, 'button[type="submit"]', 'Verify and sign in');
+      await T.page.waitForFunction(() => location.pathname !== '/login' && document.querySelector('nav[aria-label="Main"]'), { timeout: 15_000 });
+    });
+
+    await step('[security] command palette: Ctrl+K, type, Enter', async () => {
+      await sleep(800); // let the page transition after sign-in finish
+      await T.page.bringToFront();
+      await T.page.keyboard.down('Control');
+      await T.page.keyboard.press('k');
+      await T.page.keyboard.up('Control');
+      await waitSel(T.page, '[data-testid="command-palette"]', 5000);
+      await T.page.keyboard.type('calen');
+      await sleep(300);
+      await T.page.screenshot({ path: path.join(ART, 'command-palette.png') });
+      await T.page.keyboard.press('Enter');
+      await T.page.waitForFunction(() => location.pathname === '/calendar', { timeout: 8000 });
+      if (await T.page.$('a[href="/admin"]')) throw new Error('teacher sees administration links');
+      await T.page.goto(`${BASE}/admin`, { waitUntil: 'networkidle0' });
+      await T.page.waitForFunction(() => location.pathname === '/', { timeout: 8000 }); // sent home
+    });
+
+    await step('[security] repeated wrong passwords lock the account', async () => {
+      await S.page.goto(`${BASE}/login`, { waitUntil: 'networkidle0' });
+      await S.page.type('input[type="email"]', sEmail);
+      for (let i = 0; i < 5; i += 1) {
+        await S.page.$eval('input[type="password"]', (e) => e.select());
+        await S.page.type('input[type="password"]', `wrong-${i}`);
+        await clickText(S.page, 'button[type="submit"]', 'Sign in');
+        await sleep(700);
+      }
+      await S.page.waitForFunction(() => document.body.innerText.includes('Too many failed attempts'), { timeout: 8000 });
+    });
+
+    await step('[security] administrator: overview, live class without its content, system health', async () => {
+      // The teacher opens a room so there is something in session.
+      await T.page.goto(`${BASE}/`, { waitUntil: 'networkidle0' });
+      await clickText(T.page, 'button', 'Open a room');
+      await T.page.waitForFunction(() => /\/m\/[a-z-]+$/.test(location.pathname), { timeout: 15_000 });
+      const code = T.page.url().split('/m/')[1];
+      await clickText(T.page, 'button', 'Start class');
+      await waitSel(T.page, '[data-testid="meeting-room"]');
+      await uiLogin(A.page, aEmail, 'Classroom123456');
+      await A.page.click('a[href="/admin"]');
+      await waitSel(A.page, '[data-testid="admin-live"]');
+      await A.page.waitForFunction(() => document.querySelector('[data-testid="admin-live"]').innerText.includes('Eleanor Whitcombe'), { timeout: 10_000 });
+      const text = await A.page.evaluate(() => document.body.innerText);
+      if (text.includes(code) || text.includes("Eleanor Whitcombe's meeting")) throw new Error('admin overview leaks class code or title');
+      if (!(await A.page.$eval('[data-testid="admin-system"]', (e) => e.innerText)).includes('Connected')) throw new Error('database not reported as connected');
+      await sleep(500);
+      await A.page.screenshot({ path: path.join(ART, 'admin-overview.png'), fullPage: true });
+    });
+
+    await step('[security] administrator unlocks the student, then suspends and restores them', async () => {
+      await A.page.click('a[href="/admin/people"]');
+      await waitSel(A.page, '[data-testid="admin-people"]');
+      await A.page.type('input[aria-label="Search people"]', 'felix');
+      await A.page.waitForFunction((e) => document.querySelectorAll('[data-testid="admin-people"] li').length === 1 && document.querySelector(`[data-user="${e}"]`)?.innerText.includes('Locked'), { timeout: 8000 }, sEmail);
+      await A.page.screenshot({ path: path.join(ART, 'admin-people.png') });
+      const menu = async (item) => {
+        await A.page.click('button[aria-label="Actions for Felix Arden"]');
+        await A.page.evaluate((t) => [...document.querySelectorAll('[role="menuitem"]')].find((e) => e.textContent.includes(t)).dispatchEvent(new MouseEvent('mousedown', { bubbles: true })), item);
+      };
+      await menu('Unlock sign-in');
+      await A.page.waitForFunction((e) => !document.querySelector(`[data-user="${e}"]`)?.innerText.includes('Locked'), { timeout: 8000 }, sEmail);
+      await uiLogin(S.page, sEmail); // works again
+      await menu('Suspend account');
+      await A.page.waitForFunction((e) => document.querySelector(`[data-user="${e}"]`)?.innerText.includes('Suspended'), { timeout: 8000 }, sEmail);
+      // The student's open session stops working at once.
+      await S.page.goto(`${BASE}/calendar`, { waitUntil: 'networkidle0' });
+      await S.page.waitForFunction(() => location.pathname === '/login', { timeout: 10_000 });
+      await menu('Restore account');
+      await A.page.waitForFunction((e) => !document.querySelector(`[data-user="${e}"]`)?.innerText.includes('Suspended'), { timeout: 8000 }, sEmail);
+    });
+
+    await step('[security] administrator ends the live class; the audit trail shows what was done', async () => {
+      await A.page.click('a[href="/admin/classes"]');
+      await waitSel(A.page, '[data-testid="admin-classes"]');
+      await clickText(A.page, 'button', 'End class');
+      await T.page.waitForFunction(() => document.body.innerText.includes('The class has ended'), { timeout: 10_000 });
+      await A.page.click('a[href="/admin/audit"]');
+      await waitSel(A.page, '[data-testid="admin-audit"]');
+      await A.page.waitForFunction(() => ['Administrator changed an account', 'Administrator ended a class', 'Account locked', 'Turned on two-step sign-in'].every((t) => document.body.innerText.includes(t)), { timeout: 10_000 });
+      await A.page.screenshot({ path: path.join(ART, 'admin-audit.png') });
+    });
+  } finally {
+    await Promise.all([T, S, A].map((b) => b.browser.close().catch(() => {})));
+  }
+}
+
 // ---------------------------------------------------------------- main
 
 let failed = false;
@@ -675,6 +832,7 @@ try {
     try {
       if (mode === 'seat') await seatScenario();
       else if (mode === 'recording') await recordingScenario();
+      else if (mode === 'security') await securityScenario();
       else await scenario(mode);
     } catch {
       failed = true;

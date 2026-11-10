@@ -50,7 +50,7 @@ One service serves the API, the WebSocket and the website from the same address.
    - `APP_URL` = `https://<your-app>.vercel.app`
    - `CORS_ORIGINS` = `https://<your-app>.vercel.app`
    - `RATE_LIMIT_MULTIPLIER` = `5` (API calls arrive via Vercel's proxy, so many users may appear to share a few IPs)
-   - optionally change the build command to just `cd backend && npm ci --omit=dev`
+   - optionally change the build command to just `cd backend && MEDIASOUP_WORKER_BIN=/nonexistent npm ci --omit=dev`
 2. In `frontend/vercel.json`, replace all three `kaksha-58u1` with your Render service name. Commit and push.
 3. Vercel → **Add New → Project** → import the repo:
    - **Root Directory:** `frontend`
@@ -100,3 +100,11 @@ Use two real devices on **different networks** (e.g. laptop on Wi-Fi + phone on 
 Render web services have no inbound UDP, so the mediasoup SFU, and therefore **recording**, needs a VPS (see deployment.md §8b–8c). On Render, one-to-one classes run browser-to-browser. The record button is hidden, and the Recordings page explains that recording isn't enabled on this server.
 
 The product name shown in the app is **Scholé**. The Render service URL (`kaksha-58u1.onrender.com`) is just a hostname and can stay. To change it, rename the service in Render and update `frontend/vercel.json` and `VITE_SOCKET_URL`.
+
+## Troubleshooting: build fails with no error after "built in …ms"
+
+The backend install was compiling the mediasoup media-server worker. Render doesn't need it (no UDP), so the build command sets `MEDIASOUP_WORKER_BIN=/nonexistent` to skip it. If your service was created by hand rather than from `render.yaml`, update **Settings → Build Command** to:
+
+```
+cd frontend && npm ci --include=dev && npm run build && cd ../backend && MEDIASOUP_WORKER_BIN=/nonexistent npm ci --omit=dev
+```
