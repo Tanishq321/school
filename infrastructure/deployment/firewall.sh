@@ -16,9 +16,10 @@ ufw allow 3478/tcp        # TURN over TCP
 ufw allow 5349/tcp        # TURN over TLS (turns:)
 ufw allow 49152:65535/udp # TURN relay ports (min-port..max-port in turnserver.conf)
 
-# Phase 2 (mediasoup) — uncomment when the SFU is deployed; must match MEDIASOUP_MIN/MAX_PORT
-# ufw allow 40000:49999/udp
-# ufw allow 40000:49999/tcp
+# mediasoup SFU: one port per worker, PORT_BASE..PORT_BASE+workers-1 (UDP and TCP).
+# Default PORT_BASE=40000; this range covers up to 16 workers.
+ufw allow 40000:40015/udp
+ufw allow 40000:40015/tcp
 
 # MongoDB (27017), Node (4000) and coturn metrics (9641) stay bound to 127.0.0.1: never open them.
 ufw --force enable
