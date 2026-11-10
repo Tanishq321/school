@@ -29,6 +29,7 @@ export class SfuSession extends EventTarget {
     this.recv = null;
     this.mic = null;
     this.cam = null;
+    this.screen = null;
     this.consumers = new Map(); // consumerId -> Consumer
     this.pendingProducers = new Map(); // producerId -> info (while not ready / in flight)
     this.versions = new Map(); // userId -> number
@@ -69,6 +70,7 @@ export class SfuSession extends EventTarget {
     this.ready = true;
     this._statsTimer = setInterval(() => this._collectStats(), 3000);
     await this.syncLocal();
+    if (this.screenTrack?.readyState === 'live') await this.startScreen(this.screenTrack); // re-publish after a rebuild
     for (const p of producers) this._consume(p);
     for (const p of this.pendingProducers.values()) this._consume(p);
   }
@@ -178,6 +180,32 @@ export class SfuSession extends EventTarget {
     }
   }
 
+  /** Publish a screen-capture track (the server must already have given us the share slot). */
+  async startScreen(track) {
+    return this._queue(async () => {
+      this.screenTrack = track;
+      if (!this.send || this.screen) return;
+      this.screen = await this.send.produce({
+        track,
+        stopTracks: false,
+        encodings: [{ maxBitrate: 2_500_000 }],
+        codecOptions: { videoGoogleStartBitrate: 1000 },
+        appData: { source: 'screen' },
+      });
+    });
+  }
+
+  async stopScreen() {
+    return this._queue(async () => {
+      this.screenTrack = null;
+      if (!this.screen) return;
+      const id = this.screen.id;
+      this.screen.close();
+      this.screen = null;
+      await this.req('mediasoup:closeProducer', { producerId: id }).catch(() => {});
+    });
+  }
+
   // ------------------------------------------------------------ receiving
 
   onNewProducer(info) {
@@ -205,7 +233,7 @@ export class SfuSession extends EventTarget {
       this._publishRemote(params.userId);
       await this.req('mediasoup:resumeConsumer', { consumerId: consumer.id });
       const layer = this.preferred.get(params.userId);
-      if (consumer.kind === 'video' && layer != null) this._applyLayer(consumer, layer);
+      if (consumer.kind === 'video' && info.source !== 'screen' && layer != null) this._applyLayer(consumer, layer);
     } catch (err) {
       if (err.code !== 'producer_gone' && err.code !== 'already_consuming') console.warn('[sfu] consume failed', err);
     } finally {
@@ -222,17 +250,24 @@ export class SfuSession extends EventTarget {
   }
 
   _publishRemote(userId) {
-    const tracks = [...this.consumers.values()].filter((c) => c.appData.userId === userId && !c.closed).map((c) => c.track);
+    const mine = [...this.consumers.values()].filter((c) => c.appData.userId === userId && !c.closed);
+    const av = mine.filter((c) => c.appData.source !== 'screen').map((c) => c.track);
+    const screen = mine.filter((c) => c.appData.source === 'screen').map((c) => c.track);
     const version = (this.versions.get(userId) || 0) + 1;
     this.versions.set(userId, version);
-    this._emit('remote', { userId, stream: tracks.length ? new MediaStream(tracks) : null, version });
+    this._emit('remote', {
+      userId,
+      stream: av.length ? new MediaStream(av) : null,
+      screenStream: screen.length ? new MediaStream(screen) : null,
+      version,
+    });
   }
 
   /** 0 = thumbnail, 1 = medium tile, 2 = large/spotlight. Saves bandwidth for everyone. */
   setPreferredLayer(userId, spatialLayer) {
     if (this.preferred.get(userId) === spatialLayer) return;
     this.preferred.set(userId, spatialLayer);
-    for (const c of this.consumers.values()) if (c.appData.userId === userId && c.kind === 'video') this._applyLayer(c, spatialLayer);
+    for (const c of this.consumers.values()) if (c.appData.userId === userId && c.kind === 'video' && c.appData.source !== 'screen') this._applyLayer(c, spatialLayer);
   }
 
   _applyLayer(consumer, spatialLayer) {
@@ -305,8 +340,10 @@ export class SfuSession extends EventTarget {
     users.forEach((u) => this._publishRemote(u));
     this.mic?.close();
     this.cam?.close();
+    this.screen?.close();
     this.mic = null;
     this.cam = null;
+    this.screen = null;
     this.send?.close();
     this.recv?.close();
     this.send = null;

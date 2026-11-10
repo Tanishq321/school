@@ -20,10 +20,11 @@ export function ToastProvider({ children }) {
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`animate-fade-up pointer-events-auto flex max-w-md items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium shadow-lg ${
-              t.tone === 'error' ? 'bg-danger text-white' : t.tone === 'success' ? 'bg-brand-600 text-white' : 'bg-ink text-white dark:bg-stone-100 dark:text-ink'
+            className={`animate-fade-up pointer-events-auto flex max-w-md items-center gap-3 rounded-full border bg-night-2/90 py-2.5 pr-3 pl-5 text-sm text-vellum shadow-[0_20px_50px_-20px_rgba(0,0,0,.8)] backdrop-blur-xl ${
+              t.tone === 'error' ? 'border-danger/60' : t.tone === 'success' ? 'border-brand-300/60' : 'border-vellum/10'
             }`}
           >
+            <span className={`size-1.5 shrink-0 rounded-full ${t.tone === 'error' ? 'bg-red-400' : 'bg-brand-300'}`} />
             <span>{t.message}</span>
             <button onClick={() => dismiss(t.id)} className="opacity-70 hover:opacity-100" aria-label="Dismiss">
               <X size={14} />

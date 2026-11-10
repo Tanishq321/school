@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from 'react';
 import { AlertCircle, CheckCircle2, Info, Loader2, X } from 'lucide-react';
+import { BRAND } from '../../brand.js';
 
 const BTN = {
   // Brushed brass: the product's one metallic accent, used for the primary action only.
@@ -15,7 +16,8 @@ export function Button({ variant = 'primary', size = 'md', loading, className = 
   const sz = size === 'lg' ? 'h-12 px-7 text-[15px]' : size === 'sm' ? 'h-8 px-3.5 text-[13px]' : 'h-10 px-5 text-sm';
   return (
     <button
-      className={`inline-flex items-center justify-center gap-2 rounded-full font-medium tracking-[0.01em] transition duration-200 active:scale-[.98] disabled:pointer-events-none disabled:opacity-50 ${sz} ${BTN[variant]} ${className}`}
+      data-sheen={variant === 'primary' ? '' : undefined}
+      className={`${variant === 'primary' ? 'sheen ' : ''}inline-flex items-center justify-center gap-2 rounded-full font-medium tracking-[0.01em] transition duration-200 active:scale-[.98] disabled:pointer-events-none disabled:opacity-50 ${sz} ${BTN[variant]} ${className}`}
       disabled={disabled || loading}
       {...props}
     >
@@ -98,16 +100,22 @@ export function Alert({ tone = 'error', children, className = '' }) {
 
 export const Spinner = ({ size = 20, className = '' }) => <Loader2 size={size} className={`animate-spin ${className}`} aria-label="Loading" />;
 
-export function FullPageSpinner({ label = 'Loading…' }) {
+/** The monogram with a brass arc travelling around it: the house loading mark. */
+export function FullPageSpinner({ label = 'One moment' }) {
   return (
-    <div className="flex h-full min-h-[50vh] flex-col items-center justify-center gap-3 text-ink-2 dark:text-slate-400">
-      <Spinner size={28} />
-      <span className="text-sm">{label}</span>
+    <div className="flex h-full min-h-[50vh] flex-col items-center justify-center gap-5 text-ink-2 dark:text-slate-400" role="status">
+      <span className="relative inline-flex">
+        <Monogram size={46} />
+        <svg viewBox="0 0 50 50" className="absolute -inset-[7px] h-[60px] w-[60px] animate-spin [animation-duration:1.6s]" aria-hidden="true">
+          <circle cx="25" cy="25" r="23" fill="none" stroke="var(--color-brand-400)" strokeWidth="1" strokeLinecap="round" strokeDasharray="28 120" />
+        </svg>
+      </span>
+      <span className="text-sm tracking-wide">{label}</span>
     </div>
   );
 }
 
-/** Monogram: a Bodoni "K" set in an engraved brass ring. */
+/** Monogram: a Bodoni initial set in an engraved brass ring. */
 export function Monogram({ size = 34, className = '' }) {
   return (
     <svg viewBox="0 0 40 40" width={size} height={size} className={className} aria-hidden="true">
@@ -121,7 +129,7 @@ export function Monogram({ size = 34, className = '' }) {
       <circle cx="20" cy="20" r="18.5" fill="none" stroke="url(#brass)" strokeWidth="1.1" />
       <circle cx="20" cy="20" r="15.6" fill="none" stroke="url(#brass)" strokeWidth=".4" opacity=".7" />
       <text x="20" y="27.2" textAnchor="middle" fontFamily="Bodoni Moda Variable, Didot, serif" fontSize="21" fontWeight="500" fill="url(#brass)">
-        K
+        {BRAND.letter}
       </text>
     </svg>
   );
@@ -131,7 +139,7 @@ export function Logo({ className = '' }) {
   return (
     <span className={`inline-flex items-center gap-2.5 ${className}`}>
       <Monogram />
-      <span className="font-display text-[22px] font-medium tracking-tight">{import.meta.env.VITE_APP_NAME || 'Kaksha'}</span>
+      <span className="font-display text-[22px] font-medium tracking-tight">{BRAND.name}</span>
     </span>
   );
 }

@@ -20,9 +20,10 @@ export class P2PPeer extends EventTarget {
     this.localTracks = { ...localTracks };
     this.send = (data) => send({ ...data, pcId: this.sessionId });
     this.refreshIce = refreshIce;
-    this.remoteStream = new MediaStream();
+    this.remoteStream = new MediaStream(); // mic + camera
+    this.remoteScreen = new MediaStream(); // screen share
     this.pendingCandidates = [];
-    this.transceivers = { audio: null, video: null };
+    this.transceivers = { audio: null, video: null, screen: null };
     this.restartAttempts = 0;
     this.closed = false;
     this.createdAt = Date.now();
@@ -33,9 +34,12 @@ export class P2PPeer extends EventTarget {
     this.pc.onicecandidate = ({ candidate }) => {
       if (candidate) this.send({ type: 'candidate', candidate: candidate.toJSON() });
     };
-    this.pc.ontrack = ({ track }) => {
-      this.remoteStream.getTracks().filter((t) => t.kind === track.kind).forEach((t) => this.remoteStream.removeTrack(t));
-      this.remoteStream.addTrack(track);
+    this.pc.ontrack = ({ track, transceiver }) => {
+      // m-line order is identical on both sides: audio, camera video, screen video.
+      const videos = this.pc.getTransceivers().filter((t) => t.receiver.track?.kind === 'video');
+      const target = track.kind === 'video' && videos.indexOf(transceiver) === 1 ? this.remoteScreen : this.remoteStream;
+      target.getTracks().filter((t) => t.kind === track.kind).forEach((t) => target.removeTrack(t));
+      target.addTrack(track);
       this._emit('track');
     };
     this.pc.onconnectionstatechange = () => this._onConnectionState();
@@ -43,9 +47,9 @@ export class P2PPeer extends EventTarget {
 
     if (initiator) {
       // Transceivers exist from the start so turning the camera on later never needs renegotiation.
-      for (const kind of ['audio', 'video']) {
+      for (const kind of ['audio', 'video', 'screen']) {
         const t = this.localTracks[kind];
-        this.transceivers[kind] = this.pc.addTransceiver(t || kind, { direction: 'sendrecv' });
+        this.transceivers[kind] = this.pc.addTransceiver(t || (kind === 'screen' ? 'video' : kind), { direction: 'sendrecv' });
       }
       this.pc.onnegotiationneeded = () => this._makeOffer();
     }
@@ -102,7 +106,8 @@ export class P2PPeer extends EventTarget {
 
   _attachResponderTransceivers() {
     for (const t of this.pc.getTransceivers()) {
-      const kind = t.receiver.track?.kind;
+      let kind = t.receiver.track?.kind;
+      if (kind === 'video' && this.transceivers.video && this.transceivers.video !== t) kind = 'screen';
       if (!kind || this.transceivers[kind]) continue;
       this.transceivers[kind] = t;
       t.direction = 'sendrecv';
@@ -207,6 +212,7 @@ export class P2PPeer extends EventTarget {
     this.pc.onicecandidate = this.pc.ontrack = this.pc.onconnectionstatechange = this.pc.onnegotiationneeded = null;
     this.pc.close();
     this.remoteStream.getTracks().forEach((t) => t.stop());
+    this.remoteScreen.getTracks().forEach((t) => t.stop());
     this._emit('closed');
   }
 }

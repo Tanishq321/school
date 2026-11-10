@@ -39,7 +39,7 @@ function HostMenu({ p, allowSelfUnmute, onMute, onGrant, onLowerHand, onRemove }
   );
 }
 
-export default function ParticipantsPanel({ client, state, self, participants, waiting, isHost, onClose, toastError }) {
+export default function ParticipantsPanel({ client, state, self, participants, waiting, isHost, toastError }) {
   const [busy, setBusy] = useState(null);
   const act = async (key, fn) => {
     setBusy(key);
@@ -59,22 +59,39 @@ export default function ParticipantsPanel({ client, state, self, participants, w
     .sort((a, b) => (b.handRaised - a.handRaised) || (a.handRaised && new Date(a.handRaisedAt) - new Date(b.handRaisedAt)) || (b.isHost - a.isHost) || a.name.localeCompare(b.name));
   const hands = everyone.filter((p) => p.handRaised).length;
 
-  return (
-    <aside className="flex h-full w-full flex-col bg-night-2 text-vellum md:w-[22rem] md:rounded-[22px] md:border md:border-night-line" aria-label="People">
-      <div className="flex items-center justify-between px-5 pt-5 pb-3">
-        <h2 className="font-display text-2xl font-normal">People</h2>
-        <button onClick={onClose} className="rounded-full p-1.5 text-slate-300 hover:bg-night-3" aria-label="Close panel">
-          <X size={18} strokeWidth={1.6} />
-        </button>
-      </div>
+  const perms = meeting.permissions || {};
+  const setPerm = (key, value) => act(key, () => client.setPermissions({ [key]: value }));
 
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
       {isHost && (
-        <div className="mx-5 mb-2 space-y-3 rounded-2xl border border-night-line bg-night-3/60 p-4">
+        <details className="group mx-4 mb-2 rounded-2xl border border-night-line bg-night-3/60 open:pb-4" open>
+          <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium text-vellum marker:hidden">
+            Classroom controls
+            <span className="text-xs text-slate-400 transition group-open:rotate-180">⌄</span>
+          </summary>
+          <div className="space-y-3.5 px-4">
           <Toggle
             checked={allowSelfUnmute}
-            onChange={(v) => act('perm', () => client.setAllowSelfUnmute(v))}
+            onChange={(v) => setPerm('allowSelfUnmute', v)}
             label="Students may unmute themselves"
             description={allowSelfUnmute ? 'Anyone can speak.' : 'Students speak only when you allow them.'}
+          />
+          <Toggle
+            checked={Boolean(perms.allowScreenShare)}
+            onChange={(v) => setPerm('allowScreenShare', v)}
+            label="Students may share their screen"
+            description="One person presents at a time. You can always take over."
+          />
+          <Toggle
+            checked={Boolean(perms.allowDrawing)}
+            onChange={(v) => setPerm('allowDrawing', v)}
+            label="Students may draw on the board"
+          />
+          <Toggle
+            checked={perms.chatMode !== 'host'}
+            onChange={(v) => setPerm('chatMode', v ? 'everyone' : 'host')}
+            label="Students may chat"
           />
           <Toggle
             checked={Boolean(meeting.locked)}
@@ -82,17 +99,25 @@ export default function ParticipantsPanel({ client, state, self, participants, w
             label="Lock the room"
             description="Nobody new can join. People already here can reconnect."
           />
-          <button
-            onClick={() => act('muteAll', () => client.muteAll())}
-            disabled={busy === 'muteAll'}
-            className="w-full rounded-full border border-night-line py-2 text-sm hover:border-brand-500/60"
-          >
-            Mute everyone
-          </button>
-        </div>
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={() => act('muteAll', () => client.muteAll())}
+              disabled={busy === 'muteAll'}
+              className="flex-1 rounded-full border border-night-line py-2 text-sm hover:border-brand-500/60"
+            >
+              Mute everyone
+            </button>
+            {state.screenSharer && state.screenSharer !== self?.userId && (
+              <button onClick={() => act('stopScreen', () => client.hostStopScreen())} className="flex-1 rounded-full border border-night-line py-2 text-sm hover:border-brand-500/60">
+                Stop presentation
+              </button>
+            )}
+          </div>
+          </div>
+        </details>
       )}
 
-      <div className="flex-1 space-y-6 overflow-y-auto px-3 pb-4">
+      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-3 pb-4">
         {isHost && waiting.length > 0 && (
           <section>
             <div className="mb-2 flex items-center justify-between px-2">
@@ -176,6 +201,6 @@ export default function ParticipantsPanel({ client, state, self, participants, w
           </ul>
         </section>
       </div>
-    </aside>
+    </div>
   );
 }

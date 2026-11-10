@@ -20,7 +20,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(form.email, form.password);
-      navigate(safeNext(next), { replace: true });
+      navigate(safeNext(next), { replace: true, viewTransition: true });
     } catch (err) {
       setError(err.message);
       setLoading(false);

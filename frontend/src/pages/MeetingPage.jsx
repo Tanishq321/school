@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
+  MessageSquareText,
+  MonitorUp,
+  MonitorX,
+  PenTool,
   Copy,
   GalleryHorizontalEnd,
   Hand,
@@ -27,10 +31,12 @@ import { MeetingClient } from '../services/meetingClient.js';
 import { useEventState } from '../hooks/useEventState.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useToast } from '../contexts/ToastContext.jsx';
+import { ConsentDialog, RecIndicator, RecordButton } from '../components/meeting/Recording.jsx';
 import { Alert, Button, Field, FullPageSpinner, Logo, Monogram, Spinner } from '../components/ui/index.jsx';
 import VideoTile, { RemoteAudio } from '../components/meeting/VideoTile.jsx';
 import DeviceSettings, { MicMeter } from '../components/meeting/DeviceSettings.jsx';
-import ParticipantsPanel from '../components/meeting/ParticipantsPanel.jsx';
+import SidePanel from '../components/meeting/SidePanel.jsx';
+import Whiteboard from '../components/meeting/Whiteboard.jsx';
 import { copyText, fmtClock, fmtDateTime } from '../utils/format.js';
 
 const RELAY_KEY = 'vp.forceRelay';
@@ -364,6 +370,14 @@ function Room({ client, state, media, localMedia }) {
   const toast = useToast();
   const navigate = useNavigate();
   const [panel, setPanel] = useState(false);
+  const [tab, setTab] = useState('people');
+  const openPanel = (t) => {
+    if (panel && tab === t) setPanel(false);
+    else {
+      setTab(t);
+      setPanel(true);
+    }
+  };
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [leaveMenu, setLeaveMenu] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
@@ -391,9 +405,21 @@ function Room({ client, state, media, localMedia }) {
         speakRevoked: 'The host has turned your microphone off',
         unmute_refused: detail.message,
         mediaError: detail.message,
+        chat: detail.type === 'chat' ? `${detail.name}: ${detail.text.length > 70 ? `${detail.text.slice(0, 70)}…` : detail.text}` : null,
+        screenStopped: 'Your presentation was stopped',
+        recordingStarted: isHost ? 'Recording. Everyone has been asked for consent.' : null,
+        recordingStopped:
+          detail.reason === 'time_limit'
+            ? 'Recording stopped at its time limit'
+            : isHost
+              ? 'Recording stopped. The film will appear in your archive shortly.'
+              : 'Recording stopped',
       }[detail.type];
       if (msg) toast(msg, { duration: detail.type === 'waiting' ? 6000 : 4000, tone: detail.type === 'mediaError' ? 'error' : 'info' });
-      if (detail.type === 'waiting') setPanel(true);
+      if (detail.type === 'waiting') {
+        setTab('people');
+        setPanel(true);
+      }
     };
     client.addEventListener('notice', onNotice);
     return () => client.removeEventListener('notice', onNotice);
@@ -423,9 +449,21 @@ function Room({ client, state, media, localMedia }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [localMedia, toggleMic]);
 
-  // Which layout, and who is in focus.
+  // Stage priority: a presentation, then the board, then the people layouts.
   const n = remotes.length;
-  const view = n === 0 ? 'solo' : n === 1 ? 'pair' : layout;
+  const sharer = state.screenSharer;
+  const presenting = sharer && (sharer === self?.userId ? 'self' : remotes.find((p) => p.userId === sharer)) ? 'screen' : null;
+  const view = presenting || (state.boardOpen ? 'board' : n === 0 ? 'solo' : n === 1 ? 'pair' : layout);
+  const presenter = remotes.find((p) => p.userId === sharer);
+  const toggleShare = async () => {
+    try {
+      if (state.sharingScreen) await client.stopScreenShare();
+      else await client.startScreenShare();
+    } catch (err) {
+      toast(err.message, { tone: 'error' });
+    }
+  };
+  const canDraw = isHost || Boolean(state.meeting?.permissions?.allowDrawing);
   const present = (id) => remotes.some((p) => p.userId === id);
   const focusId =
     (pinned && present(pinned) && pinned) ||
@@ -437,7 +475,7 @@ function Room({ client, state, media, localMedia }) {
   const remoteIds = remotes.map((p) => p.userId).join(',');
   useEffect(() => {
     for (const p of remotes) {
-      const layer = view === 'pair' ? 2 : view === 'speaker' ? (p.userId === focusId ? 2 : 0) : n + 1 <= 4 ? 1 : 0;
+      const layer = view === 'pair' ? 2 : view === 'speaker' ? (p.userId === focusId ? 2 : 0) : view === 'grid' ? (n + 1 <= 4 ? 1 : 0) : 0;
       client.setVideoQuality(p.userId, layer);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -522,6 +560,7 @@ function Room({ client, state, media, localMedia }) {
         <span className="truncate font-display text-xl font-normal">{state.meeting?.title}</span>
         {state.meeting?.locked && <Lock size={15} strokeWidth={1.6} className="shrink-0 text-brand-300" aria-label="Room locked" />}
         <span className="hidden text-sm tracking-[0.08em] text-slate-400 tabular-nums sm:inline">{client.code}</span>
+        <RecIndicator state={state} client={client} isHost={isHost} toast={toast} />
         <span className="ml-auto flex items-center gap-4 text-sm text-slate-400">
           <ConnectionBadge phase={state.phase} stats={network} />
           <span className="tabular-nums">{fmtClock(elapsed)}</span>
@@ -541,6 +580,34 @@ function Room({ client, state, media, localMedia }) {
 
       <div className="flex min-h-0 flex-1 gap-3 px-3 pb-3 sm:px-5">
         <div ref={stageRef} className="relative min-w-0 flex-1">
+          {(view === 'screen' || view === 'board') && (
+            <div className="flex h-full flex-col gap-3">
+              <div className="min-h-0 flex-1">
+                {view === 'board' ? (
+                  <Whiteboard client={client} canDraw={canDraw} isHost={isHost} toastError={(m) => toast(m, { tone: 'error' })} />
+                ) : sharer === self?.userId ? (
+                  <div className="flex h-full flex-col items-center justify-center gap-6 text-center" data-testid="presenting-self">
+                    <div className="hairline w-32" />
+                    <p className="font-display text-4xl font-normal">You are presenting.</p>
+                    <p className="max-w-sm text-slate-400">Everyone in the room sees your screen. Your camera tile stays visible below.</p>
+                    <Button onClick={toggleShare} className="!bg-none !bg-danger">
+                      <MonitorX size={17} strokeWidth={1.6} /> Stop presenting
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="relative h-full w-full overflow-hidden rounded-[24px] bg-black/60 shadow-[inset_0_0_0_1px_rgba(216,190,140,.25)]" data-testid="screen-stage">
+                    <ScreenVideo stream={presenter?.screenStream} version={presenter?.streamVersion} />
+                    <span className="absolute top-4 left-4 rounded-full bg-night/70 px-3 py-1.5 text-xs text-vellum backdrop-blur">{presenter?.name}’s screen</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex shrink-0 justify-center gap-3 overflow-x-auto pb-1" data-testid="filmstrip">
+                {localTile({ className: 'aspect-video w-36 shrink-0 sm:w-44', compact: true })}
+                {remotes.map((p) => remoteTile(p, { className: 'aspect-video w-36 shrink-0 sm:w-44', compact: true, fit: 'cover' }))}
+              </div>
+            </div>
+          )}
+
           {view === 'solo' && (
             <div className="grid h-full place-items-center">
               <div className="w-full max-w-3xl space-y-6">
@@ -586,21 +653,24 @@ function Room({ client, state, media, localMedia }) {
         </div>
         {panel && (
           <div className="fixed inset-0 z-40 md:static md:z-auto">
-            <ParticipantsPanel
+            <SidePanel
+              tab={tab}
+              onTab={setTab}
+              onClose={() => setPanel(false)}
               client={client}
               state={state}
               self={self ? { ...self, audio: media.audioEnabled, video: media.videoEnabled } : null}
               participants={remotes}
-              waiting={state.waiting}
               isHost={isHost}
-              onClose={() => setPanel(false)}
               toastError={(m) => toast(m, { tone: 'error' })}
             />
           </div>
         )}
       </div>
 
-      <footer className="flex shrink-0 items-center justify-center gap-2 px-3 pt-1 pb-[max(1.1rem,env(safe-area-inset-bottom))] sm:gap-3">
+      <footer className="flex shrink-0 justify-center px-3 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        {/* The instrument panel: one floating sheet of smoked glass with a brass hairline. */}
+        <div className="flex max-w-full items-center gap-1.5 overflow-x-auto rounded-full border border-vellum/[0.09] bg-night-2/70 p-2 shadow-[0_24px_60px_-28px_rgba(0,0,0,.95),inset_0_1px_0_rgba(236,230,218,.06)] backdrop-blur-xl sm:gap-2" role="toolbar" aria-label="Class controls">
         <RoundButton
           on={media.audioEnabled}
           onClick={toggleMic}
@@ -627,12 +697,25 @@ function Room({ client, state, media, localMedia }) {
             Icon={layout === 'grid' ? GalleryHorizontalEnd : LayoutGrid}
           />
         )}
-        <ToolButton onClick={() => setPanel((v) => !v)} label="People" Icon={Users} active={panel} badge={isHost ? state.waiting.length + hands : 0} />
+        {(client.canShareScreen || state.sharingScreen) && (
+          <ToolButton onClick={toggleShare} label={state.sharingScreen ? 'Stop presenting' : 'Present your screen'} Icon={state.sharingScreen ? MonitorX : MonitorUp} active={state.sharingScreen} />
+        )}
+        {isHost && (
+          <ToolButton
+            onClick={() => client.openBoard(!state.boardOpen).catch((e) => toast(e.message, { tone: 'error' }))}
+            label={state.boardOpen ? 'Close the board' : 'Open the board'}
+            Icon={PenTool}
+            active={state.boardOpen}
+          />
+        )}
+        {isHost && <RecordButton state={state} client={client} toast={toast} ToolButton={ToolButton} />}
+        <ToolButton onClick={() => openPanel('chat')} label="Chat" Icon={MessageSquareText} active={panel && tab === 'chat'} badge={state.chatUnread} />
+        <ToolButton onClick={() => openPanel('people')} label="People" Icon={Users} active={panel && tab === 'people'} badge={isHost ? state.waiting.length + hands : 0} />
         <ToolButton onClick={() => setSettingsOpen(true)} label="Settings" Icon={Settings} />
         <div className="relative">
           <button
             onClick={() => (isHost ? setLeaveMenu((v) => !v) : leave())}
-            className="flex h-12 items-center gap-2 rounded-full bg-danger px-6 font-medium text-vellum transition hover:bg-danger-600 active:scale-95"
+            className="ml-1 flex h-12 shrink-0 items-center gap-2 rounded-full bg-danger px-6 font-medium text-vellum transition hover:bg-danger-600 active:scale-95"
             aria-label="Leave class"
             aria-haspopup={isHost ? 'menu' : undefined}
           >
@@ -651,14 +734,28 @@ function Room({ client, state, media, localMedia }) {
             </div>
           )}
         </div>
+        </div>
       </footer>
 
       <DeviceSettings open={settingsOpen} onClose={() => setSettingsOpen(false)} media={media} localMedia={localMedia} />
+      <ConsentDialog state={state} client={client} onLeave={leave} toast={toast} />
     </div>
   );
 }
 
-function ToolButton({ onClick, label, Icon, active, badge }) {
+/** A shared screen: always contained (never cropped), so slides and code stay readable. */
+function ScreenVideo({ stream, version }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (el.srcObject !== stream) el.srcObject = stream || null;
+    if (stream) el.play().catch(() => {});
+  }, [stream, version]);
+  return <video ref={ref} autoPlay playsInline muted className="absolute inset-0 h-full w-full object-contain" />;
+}
+
+function ToolButton({ onClick, label, Icon, active, badge, danger }) {
   return (
     <button
       onClick={onClick}
@@ -666,7 +763,7 @@ function ToolButton({ onClick, label, Icon, active, badge }) {
       title={label}
       aria-pressed={active}
       className={`relative flex size-12 items-center justify-center rounded-full border transition active:scale-95 ${
-        active ? 'border-brand-300 bg-brand-300 text-ink' : 'border-vellum/10 bg-vellum/[0.07] text-vellum backdrop-blur hover:border-brand-400/40 hover:bg-vellum/[0.12]'
+        active && danger ? 'border-danger bg-danger text-vellum' : active ? 'border-brand-300 bg-brand-300 text-ink' : 'border-vellum/10 bg-vellum/[0.07] text-vellum backdrop-blur hover:border-brand-400/40 hover:bg-vellum/[0.12]'
       }`}
     >
       <Icon size={19} strokeWidth={1.6} />

@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { Modal, Select, Toggle } from '../ui/index.jsx';
+import { playCue, setSoundsEnabled, soundsEnabled } from '../../services/sounds.js';
 import { useAudioLevel } from '../../hooks/useAudioLevel.js';
 
 export function MicMeter({ track, enabled }) {
@@ -8,6 +10,24 @@ export function MicMeter({ track, enabled }) {
       {Array.from({ length: 12 }, (_, i) => (
         <span key={i} className={`flex-1 rounded-full transition-colors ${level * 12 > i ? 'bg-brand-400' : 'bg-line dark:bg-night-line'}`} />
       ))}
+    </div>
+  );
+}
+
+function SoundToggle() {
+  const [on, setOn] = useState(soundsEnabled);
+  return (
+    <div className="border-t border-line pt-4 dark:border-night-line">
+      <Toggle
+        checked={on}
+        onChange={(v) => {
+          setSoundsEnabled(v);
+          setOn(v);
+          if (v) playCue('admitted');
+        }}
+        label="Sound cues"
+        description="Quiet chimes when people join or leave, raise a hand, or write in chat."
+      />
     </div>
   );
 }
@@ -49,6 +69,7 @@ export default function DeviceSettings({ open, onClose, media, localMedia, force
         ) : (
           <p className="text-xs text-ink-2 dark:text-slate-400">This browser picks the speaker automatically (output selection isn’t supported here).</p>
         )}
+        <SoundToggle />
         {onForceRelay && (
           <div className="border-t border-line pt-4 dark:border-night-line">
             <Toggle

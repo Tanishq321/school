@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarPlus, Copy, KeyRound, Lock, LogIn, MailWarning, Radio, Trash2, Users, Video } from 'lucide-react';
+import { CalendarPlus, Copy, Download, KeyRound, Lock, LogIn, MailWarning, Radio, Trash2, Users, Video } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useToast } from '../contexts/ToastContext.jsx';
 import { api } from '../services/api.js';
@@ -38,7 +38,7 @@ export default function DashboardPage() {
     setCreating(true);
     try {
       const { meeting } = await api('/meetings', { method: 'POST', body: { type: 'instant' } });
-      navigate(`/m/${meeting.code}`);
+      navigate(`/m/${meeting.code}`, { viewTransition: true });
     } catch (err) {
       toast(err.message, { tone: 'error' });
       setCreating(false);
@@ -277,7 +277,7 @@ function MeetingCard({ meeting: m, onChanged }) {
         </p>
       </div>
       <div className="col-span-2 flex flex-wrap gap-2 sm:col-span-1 sm:justify-end">
-        <Button size="sm" onClick={() => navigate(`/m/${m.code}`)}>
+        <Button size="sm" onClick={() => navigate(`/m/${m.code}`, { viewTransition: true })}>
           {m.isHost ? (m.status === 'live' ? 'Return to room' : 'Open room') : 'Join'}
         </Button>
         {m.isHost && (
@@ -357,6 +357,33 @@ function ScheduleModal({ open, onClose, onCreated }) {
   );
 }
 
+/** CSV-safe cell: quoted, and formula-looking values neutralised so spreadsheets don't execute them. */
+const csvCell = (v) => {
+  let s = v == null ? '' : String(v);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return `"${s.replace(/"/g, '""')}"`;
+};
+
+function downloadAttendance(meeting, rows) {
+  const header = ['Name', 'Email', 'Role', 'First joined', 'Last left', 'Minutes in class', 'Sessions'];
+  const lines = rows.map((a) => [
+    a.user.name,
+    a.user.email,
+    a.role === 'host' ? 'Host' : a.user.role,
+    new Date(a.firstJoinedAt).toISOString(),
+    a.present ? 'Still in class' : a.lastLeftAt ? new Date(a.lastLeftAt).toISOString() : '',
+    (a.totalSeconds / 60).toFixed(1),
+    a.sessions,
+  ]);
+  const csv = [header, ...lines].map((r) => r.map(csvCell).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `attendance-${meeting.code}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function AttendanceModal({ meeting, onClose }) {
   const [data, setData] = useState(null);
   useEffect(() => {
@@ -376,6 +403,11 @@ function AttendanceModal({ meeting, onClose }) {
         <p className="text-sm text-ink-2">Nobody joined this class.</p>
       ) : (
         <div className="overflow-x-auto">
+          <div className="mb-4 flex justify-end">
+            <Button size="sm" variant="secondary" onClick={() => downloadAttendance(meeting, data.attendance)}>
+              <Download size={14} strokeWidth={1.6} /> Download CSV
+            </Button>
+          </div>
           <table className="w-full text-left text-sm">
             <thead className="text-xs tracking-wide text-ink-2 uppercase dark:text-slate-400">
               <tr>

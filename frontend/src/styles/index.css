@@ -107,6 +107,43 @@
   }
 }
 
+/* Cursor-following sheen: light catching polished brass. Driven by --mx/--my (see main.jsx). */
+.sheen {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.sheen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(160px circle at var(--mx, -999px) var(--my, -999px), rgba(255, 244, 222, 0.28), transparent 65%);
+  opacity: 0;
+  transition: opacity 0.35s var(--ease-out-quint);
+}
+.sheen:hover::after {
+  opacity: 1;
+}
+
+/* Page transitions (View Transitions API, where supported). */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.38s;
+  animation-timing-function: var(--ease-out-quint);
+}
+
+/* Quiet scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--color-brand-500) 45%, transparent) transparent;
+}
+
+.h-13 {
+  height: 3.25rem;
+}
+
 @keyframes fade-up {
   from {
     opacity: 0;

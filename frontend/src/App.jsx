@@ -7,12 +7,18 @@ import LoginPage from './pages/LoginPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
 import VerifyEmailPage from './pages/VerifyEmailPage.jsx';
 import { ForgotPasswordPage, ResetPasswordPage } from './pages/PasswordPages.jsx';
-import DashboardPage from './pages/DashboardPage.jsx';
+import TodayPage from './pages/TodayPage.jsx';
+import CalendarPage from './pages/CalendarPage.jsx';
+import ClassesPage from './pages/ClassesPage.jsx';
+import ClassDetailPage from './pages/ClassDetailPage.jsx';
+import RecordingsPage from './pages/RecordingsPage.jsx';
+import RecordingPage from './pages/RecordingPage.jsx';
 // Heavy media code (mediasoup-client, WebRTC helpers) loads only when entering a room.
 const MeetingPage = lazy(() => import('./pages/MeetingPage.jsx'));
 const DiagnosticsPage = lazy(() => import('./pages/DiagnosticsPage.jsx'));
 import ProfilePage from './pages/ProfilePage.jsx';
 import NotFoundPage from './pages/NotFoundPage.jsx';
+import LandingPage from './pages/LandingPage.jsx';
 
 /** Only allow same-site relative paths as post-login destinations (no open redirects). */
 export const safeNext = (next) => (next && next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\') ? next : '/');
@@ -23,6 +29,18 @@ function RequireAuth({ children }) {
   if (status === 'loading') return <FullPageSpinner />;
   if (status === 'anon') return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   return children;
+}
+
+/** Visitors see the landing page at "/", members see their dashboard; other member pages need sign-in. */
+function MemberArea() {
+  const { status } = useAuth();
+  const location = useLocation();
+  if (status === 'loading') return <FullPageSpinner />;
+  if (status === 'anon') {
+    if (location.pathname === '/') return <LandingPage />;
+    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  }
+  return <AppShell />;
 }
 
 function GuestOnly({ children }) {
@@ -42,8 +60,13 @@ export default function App() {
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/m/:code" element={<RequireAuth><Suspense fallback={<FullPageSpinner label="Preparing the room…" />}><MeetingPage /></Suspense></RequireAuth>} />
-      <Route element={<RequireAuth><AppShell /></RequireAuth>}>
-        <Route index element={<DashboardPage />} />
+      <Route element={<MemberArea />}>
+        <Route index element={<TodayPage />} />
+        <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/classes" element={<ClassesPage />} />
+        <Route path="/classes/:code" element={<ClassDetailPage />} />
+        <Route path="/recordings" element={<RecordingsPage />} />
+        <Route path="/recordings/:id" element={<RecordingPage />} />
         <Route path="/diagnostics" element={<Suspense fallback={<FullPageSpinner />}><DiagnosticsPage /></Suspense>} />
         <Route path="/profile" element={<ProfilePage />} />
       </Route>
