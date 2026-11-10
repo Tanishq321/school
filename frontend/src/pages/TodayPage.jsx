@@ -4,7 +4,8 @@ import { ArrowRight, CalendarPlus, CalendarRange, Copy, LogIn, MailWarning, Radi
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useToast } from '../contexts/ToastContext.jsx';
 import { api } from '../services/api.js';
-import { Alert, Button, Field, Monogram, Spinner } from '../components/ui/index.jsx';
+import { Alert, Button, Field, Spinner } from '../components/ui/index.jsx';
+import { Rosette } from '../components/brand/Guilloche.jsx';
 import { AgendaRow, countdown, downloadAuthed, Empty, RecordingCard, ScheduleModal, SectionTitle, useMeetings, useNow } from '../components/classes/index.jsx';
 import { copyText, fmtTime } from '../utils/format.js';
 
@@ -156,7 +157,7 @@ function NextClass({ meeting: m }) {
   const soon = !live && start - now < 10 * 60_000;
   return (
     <article className="lamplight relative overflow-hidden rounded-[28px] p-8 text-vellum shadow-[0_40px_90px_-50px_rgba(5,8,18,1)] sm:p-10">
-      <Monogram size={420} className="pointer-events-none absolute -top-24 -right-28 opacity-[0.06]" />
+      <Rosette size={520} dense className="pointer-events-none absolute -top-40 -right-44 opacity-[0.26]" />
       <div className="pointer-events-none absolute inset-0 rounded-[28px] shadow-[inset_0_0_0_1px_rgba(216,190,140,.14)]" />
       <div className="relative flex items-center gap-3 text-[11px] font-medium tracking-[0.28em] uppercase">
         {live ? (
@@ -209,7 +210,7 @@ function NextClass({ meeting: m }) {
 function ClearCalendar({ isHost, onSchedule }) {
   return (
     <article className="lamplight relative flex min-h-[300px] flex-col justify-end overflow-hidden rounded-[28px] p-8 text-vellum sm:p-10">
-      <Monogram size={420} className="pointer-events-none absolute -top-24 -right-28 opacity-[0.06]" />
+      <Rosette size={520} dense className="pointer-events-none absolute -top-40 -right-44 opacity-[0.26]" />
       <div className="pointer-events-none absolute inset-0 rounded-[28px] shadow-[inset_0_0_0_1px_rgba(216,190,140,.14)]" />
       <p className="relative text-[11px] font-medium tracking-[0.28em] text-brand-300/90 uppercase">Nothing scheduled</p>
       <h2 className="relative mt-4 max-w-md font-display text-[2.4rem] leading-[1.05]">Your calendar is clear.</h2>

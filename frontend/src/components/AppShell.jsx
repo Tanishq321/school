@@ -1,9 +1,12 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Activity, CalendarDays, Clapperboard, Library, LogOut, Moon, Sun, Sunrise, UserRound } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Activity, CalendarDays, Clapperboard, Library, LogOut, Moon, ScrollText, Search, ShieldCheck, Sun, Sunrise, UserRound, Users, GraduationCap } from 'lucide-react';
+import CommandPalette from './CommandPalette.jsx';
+import { Rosette, WaveBand } from './brand/Guilloche.jsx';
 import { BRAND } from '../brand.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useTheme } from '../contexts/ThemeContext.jsx';
-import { Avatar, Logo, Monogram } from './ui/index.jsx';
+import { Avatar, Logo } from './ui/index.jsx';
 import LacquerCanvas from './brand/LacquerCanvas.jsx';
 
 export function ThemeButton({ className = '' }) {
@@ -23,7 +26,13 @@ const NAV = [
 ];
 const NAV_2 = [
   { to: '/diagnostics', label: 'Connection test', icon: Activity },
-  { to: '/profile', label: 'Profile', icon: UserRound },
+  { to: '/profile', label: 'Account', icon: UserRound },
+];
+const NAV_ADMIN = [
+  { to: '/admin', end: true, label: 'Overview', icon: ShieldCheck },
+  { to: '/admin/people', label: 'People', icon: Users },
+  { to: '/admin/classes', label: 'Classes', icon: GraduationCap },
+  { to: '/admin/audit', label: 'Audit trail', icon: ScrollText },
 ];
 
 const railItem = ({ isActive }) =>
@@ -54,18 +63,38 @@ function RailLink({ item }) {
 export default function AppShell() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [palette, setPalette] = useState(false);
   const signOut = async () => {
     await logout();
     navigate('/login');
   };
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPalette((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform);
   return (
     <div className="min-h-full lg:pl-[272px]">
-      <aside className="lamplight fixed inset-y-0 left-0 z-30 hidden w-[272px] flex-col overflow-hidden border-r border-white/5 px-5 pt-7 pb-5 text-vellum lg:flex">
-        <Monogram size={460} className="pointer-events-none absolute -bottom-40 -left-44 opacity-[0.045]" />
+      <aside className="lamplight fixed inset-y-0 left-0 z-30 hidden w-[272px] flex-col overflow-x-hidden overflow-y-auto border-r border-white/5 px-5 pt-7 pb-5 text-vellum lg:flex">
+        <Rosette size={560} className="pointer-events-none absolute -bottom-64 -left-60 opacity-[0.2]" />
         <Link to="/" className="relative px-1" aria-label={`${BRAND.name} home`}>
           <Logo />
         </Link>
-        <div className="hairline relative mt-7 mb-6" />
+        <WaveBand className="relative mt-6 mb-5" opacity={0.55} />
+        <button
+          onClick={() => setPalette(true)}
+          className="relative mb-5 flex h-10 w-full items-center gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 text-left text-[13px] text-vellum/45 transition hover:border-brand-400/30 hover:text-vellum/70"
+          aria-label="Search and commands"
+        >
+          <Search size={15} strokeWidth={1.5} /> <span className="flex-1">Search or jump to…</span>
+          <kbd className="!border-white/10 !bg-white/5 !text-vellum/50">{mac ? '⌘K' : 'Ctrl K'}</kbd>
+        </button>
         <nav className="relative space-y-1" aria-label="Main">
           {NAV.map((item) => (
             <RailLink key={item.to} item={item} />
@@ -77,8 +106,18 @@ export default function AppShell() {
             <RailLink key={item.to} item={item} />
           ))}
         </nav>
-        <div className="relative mt-auto">
-          <p className="mb-5 px-1 font-display text-[13px] leading-snug text-vellum/35 italic">{BRAND.etymology}</p>
+        {user?.role === 'admin' && (
+          <>
+            <p className="relative mt-8 mb-2 px-3 text-[11px] font-medium tracking-[0.22em] text-vellum/35 uppercase">Administration</p>
+            <nav className="relative space-y-1" aria-label="Administration">
+              {NAV_ADMIN.map((item) => (
+                <RailLink key={item.to} item={item} />
+              ))}
+            </nav>
+          </>
+        )}
+        <div className="relative mt-auto pt-8">
+          {user?.role !== 'admin' && <p className="mb-5 px-1 font-display text-[13px] leading-snug text-vellum/35 italic">{BRAND.etymology}</p>}
           <div className="flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-2.5">
             <Avatar name={user?.name} size={36} />
             <div className="min-w-0 flex-1 leading-tight">
@@ -99,6 +138,14 @@ export default function AppShell() {
           <Logo />
         </Link>
         <div className="ml-auto flex items-center gap-1">
+          <button onClick={() => setPalette(true)} className="rounded-xl p-2 text-ink-2 hover:bg-paper-2 dark:text-slate-300 dark:hover:bg-night-3" aria-label="Search and commands">
+            <Search size={18} strokeWidth={1.5} />
+          </button>
+          {user?.role === 'admin' && (
+            <Link to="/admin" className="rounded-xl p-2 text-ink-2 hover:bg-paper-2 dark:text-slate-300 dark:hover:bg-night-3" aria-label="Administration">
+              <ShieldCheck size={18} strokeWidth={1.5} />
+            </Link>
+          )}
           <ThemeButton />
           <button onClick={signOut} className="rounded-xl p-2 text-ink-2 hover:bg-paper-2 dark:text-slate-300 dark:hover:bg-night-3" aria-label="Sign out">
             <LogOut size={18} strokeWidth={1.5} />
@@ -109,6 +156,7 @@ export default function AppShell() {
       <main className="mx-auto w-full max-w-[1180px] px-5 pt-8 pb-28 sm:px-8 sm:pt-12 lg:px-14 lg:pb-16">
         <Outlet />
       </main>
+      <CommandPalette open={palette} onClose={() => setPalette(false)} />
 
       <nav
         className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line/70 bg-paper/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden dark:border-night-line dark:bg-night/90"
@@ -140,7 +188,7 @@ export function AuthLayout({ title, subtitle, children, footer }) {
       <aside className="relative hidden overflow-hidden p-14 text-vellum lg:flex lg:flex-col">
         <LacquerCanvas />
         {/* Engraved monogram, oversized and cropped. */}
-        <Monogram size={720} className="pointer-events-none absolute -right-48 -bottom-56 opacity-[0.1]" />
+        <Rosette size={900} dense className="pointer-events-none absolute -right-72 -bottom-80 opacity-[0.3]" />
         <Link to="/" className="relative">
           <Logo />
         </Link>

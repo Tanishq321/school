@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { CircleDot, MessageSquareText, Mic, MonitorUp, PenTool, PhoneOff, Users, Video } from 'lucide-react';
 import LacquerCanvas from '../components/brand/LacquerCanvas.jsx';
 import { Avatar, Logo, Monogram } from '../components/ui/index.jsx';
+import MemberCard from '../components/brand/MemberCard.jsx';
+import { Rosette, WaveBand } from '../components/brand/Guilloche.jsx';
 
 /** 0 → 1 as the element travels from entering the viewport to its centre. */
 function useScrollProgress(ref) {
@@ -36,6 +38,8 @@ const SPEC = [
   ['Class size', 'One teacher, one student. Always. A private tutorial, never a crowd.'],
   ['Infrastructure', 'Your servers. Audio and video travel through your own media server and relay, never a third-party video service.'],
   ['Encryption', 'Every stream is encrypted in transit. We say exactly that, and no more.'],
+  ['Security', 'Two-step sign-in, device control, automatic lockout and a complete audit trail.'],
+  ['Devices', 'Any modern browser. Android and iOS apps from the same code.'],
   ['Teaching tools', 'A shared board with pen, shapes and text; presentation; chat; recording with consent.'],
   ['Authority', 'Admit, mute, remove and lock, decided by the teacher and enforced by the server.'],
   ['Records', 'Attendance, transcripts, private notes and a film of each lesson, kept on your servers.'],
@@ -114,6 +118,37 @@ export default function LandingPage() {
         <Chapter title="Yours, entirely." body="Classes run on infrastructure you own, from the media server to the relay. No outside video company sits between a teacher and a student, and the sessions answer only to you." />
         <Chapter title="Made for long sessions." body="Each picture is sent at the size it is shown. Connections mend themselves after a dropped network. Sound cues are quiet. Shortcuts keep hands on the material, not the interface." />
         <Chapter title="Nothing to install." body="It opens in the browser on a laptop, tablet or phone. Your student follows the invitation, and is let straight in." />
+      </section>
+
+      {/* ---------------------------------------------------------------- membership & security */}
+      <section className="relative overflow-hidden border-y border-brand-300/10">
+        <Rosette size={1100} dense className="pointer-events-none absolute top-1/2 -left-[420px] -translate-y-1/2 opacity-[0.16]" />
+        <div className="relative mx-auto grid max-w-7xl items-center gap-16 px-6 py-28 sm:px-10 lg:grid-cols-[1fr_1.05fr]">
+          <div className="mx-auto w-full max-w-[460px]">
+            <MemberCard user={{ id: '00000000a41c7e92', name: 'Eleanor Whitcombe', role: 'teacher', createdAt: '2026-01-01', twoFactor: { enabled: true } }} />
+          </div>
+          <div>
+            <p className="text-[11px] font-medium tracking-[0.3em] text-brand-300/90 uppercase">Membership</p>
+            <h2 className="mt-5 font-display text-[clamp(2.4rem,4.5vw,3.6rem)] leading-[1.04] font-normal">
+              Guarded like a <span className="foil italic">private bank.</span>
+            </h2>
+            <WaveBand className="my-8 max-w-sm" />
+            <dl className="space-y-6 text-[17px] leading-relaxed text-vellum/75">
+              <div>
+                <dt className="font-display text-xl text-vellum">Two-step sign-in</dt>
+                <dd className="mt-1">A password alone opens nothing. Each sign-in is confirmed with a code from the member’s own phone.</dd>
+              </div>
+              <div>
+                <dt className="font-display text-xl text-vellum">Every device, accounted for</dt>
+                <dd className="mt-1">Members see where they are signed in and close any of them with one touch. Repeated wrong passwords lock the door.</dd>
+              </div>
+              <div>
+                <dt className="font-display text-xl text-vellum">Stewardship without intrusion</dt>
+                <dd className="mt-1">Your administrators manage accounts and watch the system’s health. What is said in a lesson stays between teacher and student.</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
       </section>
 
       {/* ---------------------------------------------------------------- specification */}

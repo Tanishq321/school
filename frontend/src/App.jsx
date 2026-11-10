@@ -18,6 +18,11 @@ const MeetingPage = lazy(() => import('./pages/MeetingPage.jsx'));
 const DiagnosticsPage = lazy(() => import('./pages/DiagnosticsPage.jsx'));
 import ProfilePage from './pages/ProfilePage.jsx';
 import NotFoundPage from './pages/NotFoundPage.jsx';
+const admin = () => import('./pages/AdminPages.jsx');
+const AdminOverview = lazy(() => admin().then((m) => ({ default: m.AdminOverview })));
+const AdminPeople = lazy(() => admin().then((m) => ({ default: m.AdminPeople })));
+const AdminClasses = lazy(() => admin().then((m) => ({ default: m.AdminClasses })));
+const AdminAudit = lazy(() => admin().then((m) => ({ default: m.AdminAudit })));
 import LandingPage from './pages/LandingPage.jsx';
 
 /** Only allow same-site relative paths as post-login destinations (no open redirects). */
@@ -41,6 +46,13 @@ function MemberArea() {
     return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   }
   return <AppShell />;
+}
+
+/** Administration is for administrators; everyone else is sent home (the server refuses them anyway). */
+function AdminOnly({ children }) {
+  const { user } = useAuth();
+  if (user?.role !== 'admin') return <Navigate to="/" replace />;
+  return <Suspense fallback={<FullPageSpinner />}>{children}</Suspense>;
 }
 
 function GuestOnly({ children }) {
@@ -69,6 +81,10 @@ export default function App() {
         <Route path="/recordings/:id" element={<RecordingPage />} />
         <Route path="/diagnostics" element={<Suspense fallback={<FullPageSpinner />}><DiagnosticsPage /></Suspense>} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/admin" element={<AdminOnly><AdminOverview /></AdminOnly>} />
+        <Route path="/admin/people" element={<AdminOnly><AdminPeople /></AdminOnly>} />
+        <Route path="/admin/classes" element={<AdminOnly><AdminClasses /></AdminOnly>} />
+        <Route path="/admin/audit" element={<AdminOnly><AdminAudit /></AdminOnly>} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

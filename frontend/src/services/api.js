@@ -1,3 +1,5 @@
+import { isNative, platformHeaders, sessionStore } from './platform.js';
+
 const API_ORIGIN = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 export const API_BASE = `${API_ORIGIN}/api`;
 // Socket.IO may live on a different origin than the API (e.g. API proxied through Vercel, sockets direct to Render).
@@ -39,13 +41,25 @@ function tokenExpiresInMs(token) {
 /** Single-flight refresh: concurrent callers share one request (refresh tokens rotate). */
 export function refreshSession() {
   if (!refreshing) {
-    refreshing = fetch(`${API_BASE}/auth/refresh`, { method: 'POST', credentials: 'include' })
+    refreshing = (async () => {
+      const stored = await sessionStore.get();
+      if (isNative && !stored) throw new ApiError(401, 'no_refresh_token', 'Signed out');
+      return fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { ...platformHeaders, ...(isNative ? { 'Content-Type': 'application/json' } : {}) },
+        body: isNative ? JSON.stringify({ refreshToken: stored }) : undefined,
+      });
+    })()
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {
+          // Only forget the device when the server says the session is gone, not on a network blip.
+          if (res.status === 401) await sessionStore.set(null);
           setSession(null, null);
           throw new ApiError(res.status, body.error?.code || 'unauthorized', body.error?.message || 'Session expired');
         }
+        if (body.refreshToken) await sessionStore.set(body.refreshToken);
         setSession(body.accessToken, body.user);
         return body;
       })
@@ -70,6 +84,7 @@ export async function api(path, { method = 'GET', body, retry = true } = {}) {
       method,
       credentials: 'include',
       headers: {
+        ...platformHeaders,
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
@@ -94,5 +109,12 @@ export async function api(path, { method = 'GET', body, retry = true } = {}) {
     const fallback = isJson ? `Request failed (${res.status})` : `Can't reach the server (HTTP ${res.status}). The app's API connection is misconfigured or the server is starting up; try again in a minute.`;
     throw new ApiError(res.status, data.error?.code || (isJson ? 'error' : 'api_unreachable'), data.error?.message || fallback, data.error?.details);
   }
+  // The apps keep the rotating refresh token themselves (see platform.js).
+  if (isNative && data?.refreshToken) await sessionStore.set(data.refreshToken);
   return data;
+}
+
+/** Body fields the apps add to session endpoints (browsers use the cookie instead). */
+export async function sessionBody(extra = {}) {
+  return isNative ? { ...extra, refreshToken: await sessionStore.get() } : extra;
 }

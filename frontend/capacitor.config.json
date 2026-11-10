@@ -1,0 +1,9 @@
+{
+  "appId": "app.schole.classroom",
+  "appName": "Scholé",
+  "webDir": "dist-app",
+  "backgroundColor": "#0f1628",
+  "server": { "androidScheme": "https", "iosScheme": "capacitor" },
+  "android": { "allowMixedContent": false, "captureInput": true },
+  "ios": { "contentInset": "always", "backgroundColor": "#0f1628" }
+}

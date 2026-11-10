@@ -182,3 +182,77 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------------------------------------------------------------------------------------------
+ * Phase 5 materials: engraved metal, foil, vellum.
+ * ------------------------------------------------------------------------------------------- */
+
+/* Foil lettering: a brass gradient clipped to the glyphs. */
+.foil {
+  background: linear-gradient(100deg, #f3e2b8 0%, #c6a26a 38%, #8d6c3b 62%, #e9d3a0 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* The membership card: anodised metal with a brushed grain and a moving specular band. */
+.member-card {
+  --rx: 0deg;
+  --ry: 0deg;
+  --lx: 30%;
+  --ly: 0%;
+  transform: rotateX(var(--rx)) rotateY(var(--ry));
+  transition: transform 0.5s var(--ease-out-quint);
+  background:
+    repeating-linear-gradient(102deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 3px),
+    radial-gradient(120% 90% at 0% 0%, #26304d 0%, #131a2e 46%, #090d19 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(216, 190, 140, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 40px 80px -36px rgba(0, 0, 0, 0.95),
+    0 12px 24px -14px rgba(0, 0, 0, 0.7);
+}
+.member-card-light {
+  background:
+    radial-gradient(60% 80% at var(--lx) var(--ly), rgba(255, 236, 196, 0.2), transparent 60%),
+    linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.07) 46%, transparent 58%);
+  mix-blend-mode: screen;
+}
+
+/* A sheet of vellum: for certificates, recovery codes, anything "issued". */
+.vellum-sheet {
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.9), transparent 70%),
+    #f6f1e4;
+  color: var(--color-ink);
+  box-shadow:
+    inset 0 0 0 1px rgba(141, 108, 59, 0.35),
+    inset 0 0 0 5px #f6f1e4,
+    inset 0 0 0 6px rgba(141, 108, 59, 0.22),
+    0 30px 60px -34px rgba(0, 0, 0, 0.7);
+}
+
+/* Engraved plate: a quiet inset surface for figures and read-outs. */
+.plate {
+  @apply rounded-[18px] border border-line/80 bg-white/60 dark:border-night-line dark:bg-night-2/60;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -18px 30px -24px rgba(0, 0, 0, 0.35);
+}
+
+/* Skeleton shimmer in brass, instead of a spinner, while a page gathers itself. */
+.skeleton {
+  border-radius: 10px;
+  background: linear-gradient(100deg, rgba(198, 162, 106, 0.07) 20%, rgba(198, 162, 106, 0.2) 40%, rgba(198, 162, 106, 0.07) 60%);
+  background-size: 220% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+@keyframes shimmer {
+  to {
+    background-position: -220% 0;
+  }
+}
+
+kbd {
+  @apply rounded-md border border-line bg-paper-2 px-1.5 py-0.5 font-sans text-[11px] text-ink-2 dark:border-night-line dark:bg-night-3 dark:text-slate-300;
+}

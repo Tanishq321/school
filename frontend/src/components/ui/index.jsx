@@ -146,17 +146,20 @@ export function Logo({ className = '' }) {
 
 export function Modal({ open, onClose, title, children, wide }) {
   const ref = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  // Runs only when the dialog opens or closes, so typing never steals focus back.
   useEffect(() => {
     if (!open) return undefined;
     const prev = document.activeElement;
-    ref.current?.querySelector('input,select,button,textarea')?.focus();
-    const onKey = (e) => e.key === 'Escape' && onClose();
+    (ref.current?.querySelector('input,select,textarea') || ref.current?.querySelector('button'))?.focus();
+    const onKey = (e) => e.key === 'Escape' && closeRef.current();
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
       prev?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>

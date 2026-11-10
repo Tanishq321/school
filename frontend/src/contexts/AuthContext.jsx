@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { api, onSessionChange, refreshSession, setSession } from '../services/api.js';
+import { api, onSessionChange, refreshSession, sessionBody, setSession } from '../services/api.js';
+import { sessionStore } from '../services/platform.js';
 
 const AuthContext = createContext(null);
 
@@ -37,10 +38,26 @@ export function AuthProvider({ children }) {
     return u;
   }, []);
 
-  const login = useCallback(async (email, password) => start(await api('/auth/login', { method: 'POST', body: { email, password } })), [start]);
+  /** Returns the user, or { twoFactorRequired, challenge } when a second step is needed. */
+  const login = useCallback(
+    async (email, password) => {
+      const res = await api('/auth/login', { method: 'POST', body: { email, password } });
+      return res.twoFactorRequired ? res : start(res);
+    },
+    [start],
+  );
+  const loginSecondStep = useCallback(
+    async (challenge, code) => {
+      const res = await api('/auth/login/2fa', { method: 'POST', body: { challenge, code } });
+      start(res);
+      return res;
+    },
+    [start],
+  );
   const register = useCallback(async (data) => start(await api('/auth/register', { method: 'POST', body: data })), [start]);
   const logout = useCallback(async () => {
-    await api('/auth/logout', { method: 'POST' }).catch(() => {});
+    await api('/auth/logout', { method: 'POST', body: await sessionBody() }).catch(() => {});
+    await sessionStore.set(null);
     setSession(null, null);
   }, []);
   const reloadUser = useCallback(async () => {
@@ -52,8 +69,8 @@ export function AuthProvider({ children }) {
   // Mirrors the server policy; the server still enforces it.
   const needsVerification = Boolean(user && config.requireEmailVerification && !user.emailVerified);
   const value = useMemo(
-    () => ({ user, status, config, needsVerification, login, register, logout, reloadUser, setUser }),
-    [user, status, config, needsVerification, login, register, logout, reloadUser],
+    () => ({ user, status, config, needsVerification, login, loginSecondStep, register, logout, reloadUser, setUser }),
+    [user, status, config, needsVerification, login, loginSecondStep, register, logout, reloadUser],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
