@@ -8,6 +8,7 @@ import { closeOrphanedSessions } from './services/attendanceService.js';
 import { startMeetingExpiryJob } from './services/meetingExpiryJob.js';
 import { workerPool } from './mediasoup/workerPool.js';
 import { handleWorkerDeath } from './sockets/realtime.js';
+import { startRecordingJobs } from './services/recordingService.js';
 
 async function main() {
   await connectDb();
@@ -25,6 +26,7 @@ async function main() {
   const server = http.createServer(app);
   const io = createSocketServer(server);
   const stopJob = startMeetingExpiryJob();
+  const stopRecordingJobs = startRecordingJobs();
 
   server.listen(env.PORT, env.HOST, () => logger.info(`API listening on http://${env.HOST}:${env.PORT}`));
 
@@ -34,6 +36,7 @@ async function main() {
     shuttingDown = true;
     logger.info({ signal }, 'Shutting down');
     stopJob();
+    stopRecordingJobs();
     // Close transports (not a server-initiated "disconnect" packet) so clients auto-reconnect
     // to the next process and reclaim their seats.
     io.engine.close();

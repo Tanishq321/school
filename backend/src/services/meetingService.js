@@ -7,6 +7,28 @@ import { AppError, badRequest, forbidden, notFound } from '../utils/errors.js';
 import { closeRoom, rooms } from '../sockets/realtime.js';
 import { workerPool } from '../mediasoup/workerPool.js';
 import { audit } from './auditService.js';
+import { invitationEmail, sendMail } from './mailer.js';
+import { buildIcs } from './calendarService.js';
+import logger from '../utils/logger.js';
+import User from '../models/User.js';
+
+/** Lower-case, trimmed, de-duplicated invitee emails. */
+export const normalizeInvitees = (list = []) => [...new Set(list.map((e) => String(e).trim().toLowerCase()).filter(Boolean))].slice(0, 100);
+
+/** Email each new invitee a link (that skips the password) and a calendar file. Never throws. */
+export async function sendInvitations(meeting, hostName, emails) {
+  if (!emails.length) return;
+  const link = inviteUrlFor(meeting);
+  const ics = buildIcs(meeting, { url: link, hostName, method: 'REQUEST' });
+  const mail = invitationEmail({ hostName, title: meeting.title, when: meeting.scheduledStart, link, description: meeting.description });
+  for (const to of emails) {
+    try {
+      await sendMail({ to, ...mail, attachments: [{ filename: 'class.ics', content: ics, contentType: 'text/calendar; charset=utf-8; method=REQUEST' }] });
+    } catch (err) {
+      logger.error({ err }, 'invitation email failed');
+    }
+  }
+}
 
 /** With the SFU running, meetings scale to SFU_MAX_PARTICIPANTS; without it, media is peer-to-peer (1-to-1). */
 export const effectiveCapacity = (meeting) =>
@@ -65,15 +87,22 @@ export async function createMeeting(user, input) {
     scheduledEnd: new Date(start.getTime() + durationMinutes * 60_000),
     settings: {
       allowSelfUnmute: input.allowSelfUnmute ?? true,
+      allowScreenShare: input.allowScreenShare ?? false,
+      allowDrawing: input.allowDrawing ?? false,
+      chatMode: input.chatMode ?? 'everyone',
+      saveChat: input.saveChat ?? true,
       waitingRoom: input.waitingRoom ?? true,
       maxParticipants: input.maxParticipants ?? 20,
       hasPassword: Boolean(input.password),
       passwordHash: input.password ? await bcrypt.hash(input.password, 10) : undefined,
     },
     inviteNonce: randomToken(12),
+    invitees: normalizeInvitees(input.invitees).filter((e) => e !== user.email?.toLowerCase()),
   });
-  audit('meeting.create', { actor: user.id, targetType: 'meeting', targetId: meeting._id, meta: { type: input.type } });
-  return Meeting.findById(meeting._id).select('+inviteNonce');
+  audit('meeting.create', { actor: user.id, targetType: 'meeting', targetId: meeting._id, meta: { type: input.type, invitees: meeting.invitees.length } });
+  const full = await Meeting.findById(meeting._id).select('+inviteNonce');
+  sendInvitations(full, user.name, full.invitees);
+  return full;
 }
 
 export async function getByCode(code, { withSecrets = false } = {}) {
@@ -117,8 +146,14 @@ export async function authorizeJoin(user, code, { password, invite } = {}) {
   return { meeting, isHost };
 }
 
-export async function updateMeeting(meeting, input) {
+export async function updateMeeting(meeting, input, actor) {
   if (CLOSED_STATUSES.includes(meeting.status)) throw new AppError(409, 'meeting_closed', 'This meeting is closed');
+  let added = [];
+  if (input.invitees !== undefined) {
+    const next = normalizeInvitees(input.invitees).filter((e) => e !== actor?.email?.toLowerCase());
+    added = next.filter((e) => !meeting.invitees.includes(e));
+    meeting.invitees = next;
+  }
   if (input.title !== undefined) meeting.title = input.title;
   if (input.description !== undefined) meeting.description = input.description;
   if (input.scheduledStart || input.durationMinutes) {
@@ -129,13 +164,16 @@ export async function updateMeeting(meeting, input) {
   }
   if (input.waitingRoom !== undefined) meeting.settings.waitingRoom = input.waitingRoom;
   if (input.maxParticipants !== undefined) meeting.settings.maxParticipants = input.maxParticipants;
-  if (input.allowSelfUnmute !== undefined) meeting.settings.allowSelfUnmute = input.allowSelfUnmute;
+  for (const k of ['allowSelfUnmute', 'allowScreenShare', 'allowDrawing', 'chatMode', 'saveChat']) {
+    if (input[k] !== undefined) meeting.settings[k] = input[k];
+  }
   if (input.password !== undefined) {
     meeting.settings.hasPassword = Boolean(input.password);
     meeting.settings.passwordHash = input.password ? await bcrypt.hash(input.password, 10) : undefined;
   }
   if (input.rotateInvite) meeting.inviteNonce = randomToken(12);
   await meeting.save();
+  if (added.length) sendInvitations(meeting, actor?.name || meeting.host?.name || 'Your teacher', added);
   const room = rooms.get(String(meeting._id));
   if (room) room.settings = { waitingRoom: meeting.settings.waitingRoom, maxParticipants: effectiveCapacity(meeting) };
   return meeting;
@@ -161,16 +199,51 @@ export async function endMeeting(meeting, reason, actorId) {
   return Meeting.findById(meeting._id).populate('host', 'name');
 }
 
-export async function listForUser(user, scope) {
+async function visibleTo(user) {
   const attended = await Attendance.distinct('meeting', { user: user.id });
   const or = [{ host: user.id }, { _id: { $in: attended } }];
-  const filter =
-    scope === 'past'
-      ? { $or: or, status: { $in: CLOSED_STATUSES } }
-      : { $or: or, status: { $in: [MEETING_STATUS.SCHEDULED, MEETING_STATUS.LIVE] } };
-  const sort = scope === 'past' ? { scheduledStart: -1 } : { scheduledStart: 1 };
-  const meetings = await Meeting.find(filter).select('+inviteNonce').populate('host', 'name').sort(sort).limit(100);
-  return meetings.map((m) =>
-    isHostOf(m, user.id) ? { ...serializeForHost(m), isHost: true } : { ...serializeSummary(m), id: String(m._id), status: m.status, endedAt: m.endedAt, isHost: false },
-  );
+  if (user.email) or.push({ invitees: user.email.toLowerCase() });
+  return or;
+}
+
+function serializeForViewer(m, user) {
+  return isHostOf(m, user.id)
+    ? { ...serializeForHost(m), isHost: true }
+    : { ...serializeSummary(m), id: String(m._id), status: m.status, startedAt: m.startedAt, endedAt: m.endedAt, isHost: false, invited: Boolean(user.email && m.invitees?.includes(user.email.toLowerCase())) };
+}
+
+export async function listForUser(user, scope, { from, to } = {}) {
+  const or = await visibleTo(user);
+  let filter;
+  let sort;
+  if (scope === 'range') {
+    // Calendar: anything (not cancelled) that overlaps the requested window.
+    filter = { $or: or, status: { $ne: MEETING_STATUS.CANCELLED }, scheduledStart: { $lt: to }, scheduledEnd: { $gt: from } };
+    sort = { scheduledStart: 1 };
+  } else if (scope === 'past') {
+    filter = { $or: or, status: { $in: CLOSED_STATUSES } };
+    sort = { scheduledStart: -1 };
+  } else {
+    filter = { $or: or, status: { $in: [MEETING_STATUS.SCHEDULED, MEETING_STATUS.LIVE] } };
+    sort = { scheduledStart: 1 };
+  }
+  const meetings = await Meeting.find(filter).select('+inviteNonce').populate('host', 'name').sort(sort).limit(scope === 'range' ? 500 : 100);
+  return meetings.map((m) => serializeForViewer(m, user));
+}
+
+/** May this user see the class page (summary, calendar file)? Host, invitee, or someone who attended. */
+export async function canSeeMeeting(meeting, user) {
+  if (isHostOf(meeting, user.id)) return true;
+  if (user.email && meeting.invitees?.includes(user.email.toLowerCase())) return true;
+  return Boolean(await Attendance.exists({ meeting: meeting._id, user: user.id }));
+}
+
+export { serializeForViewer, isHostOf };
+
+/** Resolve invitee emails to names for the host's guest list (no other account details). */
+export async function inviteeDirectory(meeting) {
+  if (!meeting.invitees?.length) return [];
+  const users = await User.find({ email: { $in: meeting.invitees } }).select('name email').lean();
+  const byEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.name]));
+  return meeting.invitees.map((email) => ({ email, name: byEmail.get(email) || null, hasAccount: byEmail.has(email) }));
 }

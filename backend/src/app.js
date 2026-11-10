@@ -10,6 +10,7 @@ import env from './config/env.js';
 import logger from './utils/logger.js';
 import authRoutes from './routes/authRoutes.js';
 import meetingRoutes, { diagnosticsRouter } from './routes/meetingRoutes.js';
+import recordingRoutes from './routes/recordingRoutes.js';
 import { globalLimiter } from './middleware/rateLimits.js';
 import { workerPool } from './mediasoup/workerPool.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
@@ -67,12 +68,15 @@ export function createApp() {
       requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION,
       mediaMode: workerPool.ready ? 'sfu' : 'p2p',
       maxParticipantsNow: workerPool.ready ? env.SFU_MAX_PARTICIPANTS : env.P2P_MAX_PARTICIPANTS,
+      appName: env.APP_NAME,
+      recording: { enabled: env.RECORDING_ENABLED && workerPool.ready, retentionDays: env.RECORDING_RETENTION_DAYS, maxMinutes: env.RECORDING_MAX_MINUTES },
     });
   });
 
   app.use('/api', globalLimiter);
   app.use('/api/auth', authRoutes);
   app.use('/api/meetings', meetingRoutes);
+  app.use('/api/recordings', recordingRoutes);
   app.use('/api/diagnostics', diagnosticsRouter);
   app.use('/api', notFoundHandler);
 

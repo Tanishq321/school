@@ -10,5 +10,5 @@ export const mediaCodecs = [
   },
 ];
 
-/** Sources a participant may publish. 'screen' is reserved for Phase 3. */
-export const ALLOWED_SOURCES = ['mic', 'camera'];
+/** Sources a participant may publish. */
+export const ALLOWED_SOURCES = ['mic', 'camera', 'screen'];

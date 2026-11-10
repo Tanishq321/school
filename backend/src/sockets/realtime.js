@@ -8,6 +8,9 @@ import * as attendance from '../services/attendanceService.js';
 import { workerPool } from '../mediasoup/workerPool.js';
 import { SfuRoom } from '../mediasoup/sfuRoom.js';
 import { AppError } from '../utils/errors.js';
+import { saveBoard } from '../services/whiteboardService.js';
+import { stopRecording } from '../services/recordingService.js';
+import logger from '../utils/logger.js';
 
 export const rooms = new Map(); // meetingId -> Room
 let ioRef = null;
@@ -33,7 +36,33 @@ export class Room {
     this._sfuPromise = null;
     this.locked = Boolean(meeting.locked);
     this.banned = new Set();
-    this.permissions = { allowSelfUnmute: meeting.settings?.allowSelfUnmute ?? true };
+    this.permissions = {
+      allowSelfUnmute: meeting.settings?.allowSelfUnmute ?? true,
+      allowScreenShare: meeting.settings?.allowScreenShare ?? false,
+      allowDrawing: meeting.settings?.allowDrawing ?? false,
+      chatMode: meeting.settings?.chatMode ?? 'everyone',
+    };
+    this.saveChat = meeting.settings?.saveChat ?? true;
+    this.screenSharer = null; // userId currently sharing (one at a time)
+    this.chat = []; // recent messages kept in memory for late joiners (bounded)
+    this.board = { open: false, ops: null, loaded: false, saveTimer: null };
+    this.recording = null; // live recording state (see recordingService)
+  }
+
+  async flushBoard() {
+    if (this.board.loaded) await saveBoard(this);
+  }
+
+  canShareScreen(member) {
+    return member.isHost || this.permissions.allowScreenShare;
+  }
+
+  canDraw(member) {
+    return member.isHost || this.permissions.allowDrawing;
+  }
+
+  canChat(member) {
+    return member.isHost || this.permissions.chatMode === 'everyone';
   }
 
   /** Lazily create the mediasoup router (on the least-loaded worker) the first time someone needs it. */
@@ -50,6 +79,7 @@ export class Room {
       })
         .then((sfu) => {
           this.sfu = sfu;
+          sfu.onChange = () => this.recording?.recorder?.schedule();
           return sfu;
         })
         .finally(() => {
@@ -107,7 +137,9 @@ export async function closeRoom(meetingId, reason) {
   const io = ioRef;
   const socketIds = [...room.members.values()].map((m) => m.socketId).concat([...room.waiting.values()].map((w) => w.socketId));
   for (const m of room.members.values()) clearTimeout(m.graceTimer);
+  await stopRecording(io, room, { reason: 'meeting_ended' }).catch((err) => logger.error({ err }, 'stop recording on close failed'));
   room.sfu?.close();
+  await room.flushBoard?.();
   await Promise.all([...room.members.values()].map((m) => attendance.endSession(m.attendanceId, 'meeting_ended')));
   if (!io) return;
   for (const id of socketIds) {
@@ -127,6 +159,7 @@ export function handleWorkerDeath(meetingIds) {
     const room = rooms.get(id);
     if (!room) continue;
     room.sfu = null;
+    stopRecording(ioRef, room, { reason: 'media_server_restarted' }).catch((err) => logger.error({ err }, 'stop recording failed'));
     ioRef?.to(room.key).emit('mediasoup:reset', { reason: 'media_server_restarted' });
   }
 }

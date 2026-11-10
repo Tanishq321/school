@@ -137,7 +137,7 @@ describe('SFU group meeting', () => {
   it('with self-unmute off, students stay muted until the host lets them speak', async () => {
     const perm = once(sockets.s1, 'meeting:permissions');
     await emitAck(sockets.host, 'host:permissions', { allowSelfUnmute: false });
-    expect(await perm).toEqual({ allowSelfUnmute: false });
+    expect(await perm).toMatchObject({ allowSelfUnmute: false, allowScreenShare: false, allowDrawing: false, chatMode: 'everyone' });
     const denied = await emitAck(sockets.s1, 'mediasoup:resumeProducer', { producerId: media.s1.micId });
     expect(denied.error.code).toBe('unmute_not_allowed');
 

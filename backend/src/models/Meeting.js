@@ -36,8 +36,15 @@ const meetingSchema = new mongoose.Schema(
       hasPassword: { type: Boolean, default: false },
       maxParticipants: { type: Number, min: 2, max: 100, default: 20 },
       allowSelfUnmute: { type: Boolean, default: true },
+      allowScreenShare: { type: Boolean, default: false },
+      allowDrawing: { type: Boolean, default: false },
+      chatMode: { type: String, enum: ['everyone', 'host'], default: 'everyone' },
+      saveChat: { type: Boolean, default: true },
     },
     locked: { type: Boolean, default: false },
+    // People invited by email: they see the class on their dashboard and skip the waiting room.
+    invitees: { type: [String], default: [], validate: (v) => v.length <= 100 },
+    notes: { type: String, maxlength: 20000, default: '' }, // the host's private class notes
     bannedUsers: { type: [mongoose.Schema.Types.ObjectId], default: [], select: false },
     inviteNonce: { type: String, required: true, select: false },
   },
@@ -45,6 +52,7 @@ const meetingSchema = new mongoose.Schema(
 );
 
 meetingSchema.index({ status: 1, scheduledEnd: 1 });
+meetingSchema.index({ invitees: 1, scheduledStart: 1 });
 
 meetingSchema.set('toJSON', {
   transform(_doc, ret) {
@@ -53,6 +61,7 @@ meetingSchema.set('toJSON', {
     delete ret.__v;
     delete ret.inviteNonce;
     delete ret.bannedUsers;
+    delete ret.notes; // served only to the host, explicitly
     if (ret.settings) delete ret.settings.passwordHash;
     return ret;
   },

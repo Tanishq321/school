@@ -10,6 +10,9 @@ import { audit } from '../services/auditService.js';
 import { AppError, badRequest, forbidden } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 import { getOrCreateRoom, publicMember, rooms, waitingList } from './realtime.js';
+import { registerClassroomHandlers, stopScreenShare } from './classroomHandlers.js';
+import { registerRecordingHandlers } from './recordingHandlers.js';
+import { consentSummary, onMemberJoined, recordingState } from '../services/recordingService.js';
 
 const objectId = z.string().regex(/^[a-f0-9]{24}$/);
 const msId = z.string().min(8).max(64);
@@ -21,7 +24,16 @@ const schemas = {
   mediaState: z.object({ audio: z.boolean(), video: z.boolean() }),
   hand: z.object({ raised: z.boolean() }),
   lock: z.object({ locked: z.boolean() }),
-  permissions: z.object({ allowSelfUnmute: z.boolean() }),
+  permissions: z
+    .object({
+      allowSelfUnmute: z.boolean(),
+      allowScreenShare: z.boolean(),
+      allowDrawing: z.boolean(),
+      chatMode: z.enum(['everyone', 'host']),
+    })
+    .partial()
+    .strict()
+    .refine((p) => Object.keys(p).length > 0, 'Nothing to change'),
   grantSpeak: z.object({ userId: objectId, granted: z.boolean() }),
   signal: z.object({
     to: objectId,
@@ -50,7 +62,7 @@ const schemas = {
     transportId: msId,
     kind: z.enum(['audio', 'video']),
     rtpParameters: anyObj,
-    source: z.enum(['mic', 'camera']),
+    source: z.enum(['mic', 'camera', 'screen']),
     paused: z.boolean().optional(),
   }),
   msProducer: z.object({ producerId: msId }),
@@ -145,6 +157,8 @@ export function registerMeetingHandlers(io, socket) {
       mediaMode: room.mode,
       locked: room.locked,
       permissions: room.permissions,
+      screenSharer: room.screenSharer,
+      boardOpen: room.board.open,
     };
   }
 
@@ -155,6 +169,8 @@ export function registerMeetingHandlers(io, socket) {
       participants: [...room.members.values()].filter((m) => m.userId !== member.userId).map((m) => publicMember(m, room)),
       waiting: member.isHost ? waitingList(room) : [],
       meeting: meetingInfo(room, meeting),
+      recording: recordingState(room, member.userId),
+      recordingConsents: member.isHost && room.recording ? consentSummary(room) : undefined,
       ...extra,
     };
   }
@@ -180,6 +196,7 @@ export function registerMeetingHandlers(io, socket) {
       speakGranted: false,
     };
     room.members.set(u.id, member);
+    onMemberJoined(room, member);
     room.admitted.add(u.id);
     room.waiting.delete(u.id);
     room.emptySince = null;
@@ -189,6 +206,7 @@ export function registerMeetingHandlers(io, socket) {
     sock.data.status = 'admitted';
     member.attendanceId = await attendance.startSession({ meetingId: room.meetingId, userId: u.id, isHost });
     sock.to(room.key).emit('participant:joined', publicMember(member, room));
+    if (room.recording) io.to(room.hostKey).emit('recording:consents', { consents: consentSummary(room) });
     Meeting.updateOne({ _id: room.meetingId }, { $set: { lastActiveAt: new Date() } }).catch(() => {});
     return admittedPayload(room, member, meeting);
   }
@@ -231,9 +249,11 @@ export function registerMeetingHandlers(io, socket) {
     if (!member) return;
     clearTimeout(member.graceTimer);
     room.members.delete(userId);
+    if (room.screenSharer === userId) stopScreenShare(io, room);
     room.sfu?.removePeer(userId);
     await attendance.endSession(member.attendanceId, reason === 'removed' ? 'left' : reason);
     io.to(room.key).emit('participant:left', { userId, reason });
+    if (room.recording) io.to(room.hostKey).emit('recording:consents', { consents: consentSummary(room) });
     if (room.members.size === 0) room.emptySince = Date.now();
     Meeting.updateOne({ _id: room.meetingId }, { $set: { lastActiveAt: new Date() } }).catch(() => {});
   }
@@ -299,7 +319,9 @@ export function registerMeetingHandlers(io, socket) {
     }
 
     if (meeting.status !== MEETING_STATUS.LIVE) return putInWaiting(room, 'host_not_started');
-    if (room.settings.waitingRoom && !seenBefore) return putInWaiting(room, 'awaiting_approval');
+    // People the host invited by email are expected: they skip the waiting room.
+    const invited = Boolean(user.email && meeting.invitees?.includes(user.email.toLowerCase()));
+    if (room.settings.waitingRoom && !seenBefore && !invited) return putInWaiting(room, 'awaiting_approval');
     return admit(room, socket, meeting, { isHost: false });
   });
 
@@ -436,11 +458,17 @@ export function registerMeetingHandlers(io, socket) {
     return {};
   });
 
-  on('host:permissions', schemas.permissions, async ({ allowSelfUnmute }) => {
+  on('host:permissions', schemas.permissions, async (changes) => {
     const { room } = requireHost();
-    room.permissions = { ...room.permissions, allowSelfUnmute };
-    await Meeting.updateOne({ _id: room.meetingId }, { $set: { 'settings.allowSelfUnmute': allowSelfUnmute } });
-    if (!allowSelfUnmute) for (const m of room.members.values()) m.speakGranted = false;
+    room.permissions = { ...room.permissions, ...changes };
+    await Meeting.updateOne(
+      { _id: room.meetingId },
+      { $set: Object.fromEntries(Object.entries(changes).map(([k, v]) => [`settings.${k}`, v])) },
+    );
+    if (changes.allowSelfUnmute === false) for (const m of room.members.values()) m.speakGranted = false;
+    // Withdrawing screen-share permission ends a student's share immediately.
+    const sharer = room.screenSharer && room.members.get(room.screenSharer);
+    if (changes.allowScreenShare === false && sharer && !sharer.isHost) stopScreenShare(io, room, { force: true });
     io.to(room.key).emit('meeting:permissions', room.permissions);
     for (const m of room.members.values()) broadcastMember(room, m);
     return {};
@@ -568,6 +596,9 @@ export function registerMeetingHandlers(io, socket) {
     schemas.msProduce,
     async (input) => {
       const { room, member, sfu } = await sfuCtx();
+      if (input.source === 'screen' && room.screenSharer !== user.id) {
+        throw forbidden('Start screen sharing first', 'screen_not_claimed');
+      }
       // Muted-by-policy participants may publish their mic only in the paused state.
       const paused = input.paused || (input.source === 'mic' && !room.canSpeak(member));
       const producer = await sfu.produce(user.id, { ...input, paused });
@@ -617,6 +648,7 @@ export function registerMeetingHandlers(io, socket) {
       const { room, member, sfu } = await sfuCtx();
       const source = sfu.producer(user.id, producerId).appData.source;
       sfu.closeProducer(user.id, producerId);
+      if (source === 'screen' && room.screenSharer === user.id) stopScreenShare(io, room);
       if (source === 'camera') member.video = false;
       if (source === 'mic') member.audio = false;
       socket.to(room.key).emit('participant:mediaState', { userId: user.id, audio: member.audio, video: member.video });
@@ -668,6 +700,9 @@ export function registerMeetingHandlers(io, socket) {
     },
     mediaLimit,
   );
+
+  registerClassroomHandlers({ io, socket, on, requireMember, requireHost });
+  registerRecordingHandlers({ io, socket, on, requireMember, requireHost });
 
   // ================================================================ disconnect
 

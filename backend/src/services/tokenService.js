@@ -25,6 +25,36 @@ export function verifyAccessToken(token) {
   }
 }
 
+/**
+ * Signed playback URL token: <video> elements cannot send an Authorization header, so media is
+ * fetched with this token in the query string. Bound to one user and one recording, short-lived.
+ */
+export function signPlaybackToken({ userId, recordingId, ttlSeconds, scope = 'media' }) {
+  return jwt.sign({ rid: String(recordingId), scope }, env.RECORDING_PLAYBACK_SECRET || env.MEETING_TOKEN_SECRET, {
+    subject: String(userId),
+    expiresIn: ttlSeconds,
+    issuer: ISSUER,
+    audience: 'recording-playback',
+    algorithm: 'HS256',
+  });
+}
+
+export function verifyPlaybackToken(token, recordingId, { scope = 'media' } = {}) {
+  try {
+    const claims = jwt.verify(token, env.RECORDING_PLAYBACK_SECRET || env.MEETING_TOKEN_SECRET, {
+      issuer: ISSUER,
+      audience: 'recording-playback',
+      algorithms: ['HS256'],
+    });
+    if (claims.rid !== String(recordingId)) throw new Error('wrong recording');
+    // A poster-only token (handed out with library listings) cannot stream the film itself.
+    if (scope === 'media' && claims.scope !== 'media') throw new Error('wrong scope');
+    return claims;
+  } catch {
+    throw unauthorized('This playback link has expired. Reopen the recording.', 'playback_expired');
+  }
+}
+
 /** Short-lived token proving the REST join checks passed for (user, meeting). */
 export function signJoinToken({ userId, meetingId, isHost }) {
   return jwt.sign({ mid: String(meetingId), host: Boolean(isHost) }, env.MEETING_TOKEN_SECRET, {

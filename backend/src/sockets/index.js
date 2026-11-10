@@ -26,7 +26,7 @@ export function createSocketServer(httpServer) {
       if (env.REQUIRE_EMAIL_VERIFICATION && !user.emailVerified) {
         throw Object.assign(new Error('Please verify your email address first'), { code: 'email_not_verified' });
       }
-      socket.data.user = { id: String(user._id), name: user.name, role: user.role };
+      socket.data.user = { id: String(user._id), name: user.name, role: user.role, email: user.email };
       next();
     } catch (err) {
       const e = new Error(err.message || 'Unauthorized');

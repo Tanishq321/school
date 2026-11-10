@@ -17,7 +17,9 @@ export class SfuRoom {
     entry.rooms.add(meetingId);
     room.speakerObserver = await router.createActiveSpeakerObserver({ interval: 400 });
     room.speakerObserver.on('dominantspeaker', ({ producer }) => {
+      room.activeSpeaker = producer.appData.userId;
       emit.toRoom('room:activeSpeaker', { userId: producer.appData.userId });
+      room.changed();
     });
     return room;
   }
@@ -29,6 +31,16 @@ export class SfuRoom {
     this.emit = emit; // { toRoom(event, data), toUser(userId, event, data) }
     this.peers = new Map(); // userId -> Peer
     this.closed = false;
+    this.activeSpeaker = null;
+    this.onChange = null; // observer for the recorder: any stream appeared, paused, resumed or ended
+  }
+
+  changed() {
+    try {
+      this.onChange?.();
+    } catch (err) {
+      logger.error({ err }, 'sfu change observer failed');
+    }
   }
 
   get rtpCapabilities() {
@@ -123,11 +135,15 @@ export class SfuRoom {
     const producer = await transport.produce({ kind, rtpParameters, paused: Boolean(paused), appData: { userId, source } });
     peer.producers.set(producer.id, producer);
     producer.on('transportclose', () => peer.producers.delete(producer.id));
+    producer.observer.on('pause', () => this.changed());
+    producer.observer.on('resume', () => this.changed());
+    producer.observer.on('close', () => this.changed());
     if (kind === 'audio') this.speakerObserver.addProducer({ producerId: producer.id }).catch(() => {});
     // Tell everyone else so they can consume it.
     for (const other of this.peers.values()) {
       if (other.userId !== userId) this.emit.toUser(other.userId, 'mediasoup:newProducer', this.describeProducer(producer));
     }
+    this.changed();
     return producer;
   }
 
@@ -200,6 +216,8 @@ export class SfuRoom {
     this.peers.delete(userId);
     // Closing transports closes their producers/consumers; other peers' consumers fire 'producerclose'.
     for (const t of peer.transports.values()) t.close();
+    if (this.activeSpeaker === userId) this.activeSpeaker = null;
+    this.changed();
   }
 
   close() {

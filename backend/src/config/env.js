@@ -47,7 +47,8 @@ const schema = z.object({
   SMTP_SECURE: bool.default(false),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
-  MAIL_FROM: z.string().default('Classroom <no-reply@localhost>'),
+  APP_NAME: z.string().min(1).max(40).default('Scholé'),
+  MAIL_FROM: z.string().default('Scholé <no-reply@localhost>'),
 
   STUN_URLS: csv,
   TURN_URLS: csv,
@@ -70,6 +71,16 @@ const schema = z.object({
   RECONNECT_GRACE_SECONDS: z.coerce.number().int().min(0).max(300).default(20),
   MEETING_IDLE_END_MINUTES: z.coerce.number().int().min(1).default(15),
   MEETING_EXPIRY_GRACE_MINUTES: z.coerce.number().int().min(0).default(60),
+
+  // ---- Server-side recording (needs the SFU and FFmpeg). Off until consent & access policies are agreed.
+  RECORDING_ENABLED: bool.default(false),
+  RECORDINGS_DIR: z.string().default('./data/recordings'),
+  RECORDING_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+  FFMPEG_PATH: z.string().default('ffmpeg'),
+  FFPROBE_PATH: z.string().default('ffprobe'),
+  RECORDING_MAX_MINUTES: z.coerce.number().int().min(1).max(720).default(240),
+  RECORDING_MIN_FREE_MB: z.coerce.number().int().min(0).default(2048),
+  RECORDING_PLAYBACK_SECRET: z.string().min(32).optional(),
 
   // Set false only for test/staging hosts (e.g. Render free tier without SMTP/TURN): problems become warnings.
   STRICT_PRODUCTION_CHECKS: bool.default(true),
