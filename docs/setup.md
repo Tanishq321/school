@@ -47,6 +47,8 @@ npm run dev           # http://127.0.0.1:4000, restarts on change
 npm run create-admin  # ADMIN_EMAIL=... ADMIN_PASSWORD=... (admin accounts can't self-register)
 ```
 
+To try **recording** locally: install `ffmpeg` (with libx264), then set `MEDIASOUP_ENABLED=true`, `MEDIASOUP_LISTEN_IP=127.0.0.1` and `RECORDING_ENABLED=true`. Recordings land in `./data/recordings`. Invitation emails (with the `.ics`) are also printed to the log when SMTP is empty.
+
 Without SMTP, the verification and reset links appear in the backend log as `[dev-mail]`. Open the link to verify. To skip verification entirely while developing, set `REQUIRE_EMAIL_VERIFICATION=false`.
 
 ## 3. Frontend

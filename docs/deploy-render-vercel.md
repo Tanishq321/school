@@ -94,3 +94,9 @@ Use two real devices on **different networks** (e.g. laptop on Wi-Fi + phone on 
 4. Toggle airplane mode on the phone for ~5 s → the call should recover by itself.
 5. Teacher → Leave → **End class for everyone** → Dashboard → Recent → **Attendance**.
 6. Repeat with **Check devices → Always use relay server** on both (needs TURN).
+
+## What Render can't do
+
+Render web services have no inbound UDP, so the mediasoup SFU, and therefore **group classes and recording**, need a VPS (see deployment.md §8b–8c). On Render the app runs in 1-to-1 peer-to-peer mode. The record button is hidden, and the Recordings page explains that recording isn't enabled on this server.
+
+The product name shown in the app is **Scholé**. The Render service URL (`kaksha-58u1.onrender.com`) is just a hostname and can stay. To change it, rename the service in Render and update `frontend/vercel.json` and `VITE_SOCKET_URL`.

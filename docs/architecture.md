@@ -67,6 +67,42 @@ The mode is decided per server, not per meeting: one code path per deployment is
 
 Mute one or all (pauses the mic producer on the SFU), "students may unmute themselves" permission with per-student "allow to speak", lower hands, remove (stored ban; REST join returns 403), lock (new joins return 423; people already admitted can reconnect), admit all. In P2P mode the server can't pause media, so mute is delivered to the client and the UI enforces it.
 
+## 3b. Classroom features (Phase 3)
+
+- **Screen sharing:** one slot per room (`screen:start` claims it; the host may take over). The SFU accepts a `screen` producer only from the slot holder. In P2P mode a third transceiver carries the screen. Revoking student sharing, leaving, or the host's "Stop presentation" ends it and closes the producer.
+- **Chat:** `chat:send` is validated (length, rate limit 8 burst / 1 per s, permission), stored in `chatmessages` when `saveChat` is on, and broadcast. `chat:history` serves late joiners and hydrates from MongoDB after a restart. The host can delete (soft delete, audited). Clients render messages as text; only http(s) links become clickable, with `noopener noreferrer nofollow`.
+- **Whiteboard:** an ordered list of operations in normalised 0..1 coordinates (pen, highlighter, line, arrow, rectangle, ellipse, text, eraser), validated strictly. Finished operations are stored (≤ 5 000 per board) and persisted, debounced, to `whiteboards`. In-progress strokes are relayed as volatile `whiteboard:live` events and never stored. Undo/redo works on your own operations (`whiteboard:erase` is limited to the author or the host). Only the host opens or clears the board; students draw only when allowed.
+- **Permissions:** `allowSelfUnmute`, `allowScreenShare`, `allowDrawing`, `chatMode` (`everyone`/`host`) live on the meeting and are changed with one `host:permissions` event (partial updates).
+
+## 3c. Recording (Phase 4)
+
+```
+browser ─SRTP─▶ mediasoup Router ──DirectTransport consumers (in-process, no ports)──▶ Recorder (Node)
+                                                         │  raw RTP, never re-encoded live
+                                     ┌───────────────────┴────────────────────┐
+                           per consenting mic: Ogg Opus            featured picture: VP8 IVF
+                           (silence filled → aligned to t=0)       (key-frame gated, RTP-clock timestamps)
+                                     └─────────────── manifest.json + timeline ┘
+                                                         │ on stop (queued, one at a time)
+                                    FFmpeg: normalise each picture track → overlay by timeline on a
+                                    1280×720 canvas, amix voices → H.264/AAC MP4 (+faststart), poster JPEG
+```
+
+* **Why DirectTransport instead of PlainTransport→FFmpeg:** tests showed that FFmpeg's SDP/RTP input stalls `amix` when one input pauses (a muted mic) and exits after ~10 s without packets. Writing the RTP ourselves avoids both problems, needs no UDP ports, and costs almost no CPU while the class runs.
+* **Consent:** `room.recording.consent` maps each user to `pending` / `accepted` / `declined`. The recorder only *consumes* streams of `accepted` users, so a decliner's media never reaches the recorder at all. The host's consent is implied by starting. Latecomers start as `pending`. Decisions are persisted on the Recording document (the consent ledger).
+* **Picture choice:** presentation > host camera > active speaker (held at least 4 s) > anyone. Only the featured source's consumer is resumed. On a switch, the previous picture stays until the new source's first key frame arrives, so the film never flashes an empty frame.
+* **Lifecycle:** the status goes `recording` → `processing` → `ready`, or `failed` (nothing captured, or an FFmpeg error) → `deleted`. Recording stops automatically when the class ends, when a media worker dies, or after `RECORDING_MAX_MINUTES`. On boot, `processing` jobs resume from their manifest and interrupted `recording` jobs are marked failed. An hourly sweep deletes files older than `RECORDING_RETENTION_DAYS`.
+* **Access:**
+  - Files live in `RECORDINGS_DIR`, never under the web root.
+  - The host can always watch. Attendees and invitees can watch only when the host shares, and un-sharing takes effect on their next request. Admins get no implicit access.
+  - `<video>` cannot send an Authorization header, so `POST /api/recordings/:id/playback` mints JWT links bound to the user and the recording, with HTTP Range streaming. Library posters use poster-only tokens that cannot stream the film.
+
+## 3d. Invitations, calendar, class pages (Phase 4)
+
+* `meetings.invitees` (lower-cased emails, ≤ 100). New invitees get an email with the invite link (it skips the password) and an RFC 5545 `.ics` (`METHOD:REQUEST`, 10-minute alarm). Invitees see the class in their lists and calendar, and skip the waiting room. The room lock still applies.
+* `GET /api/meetings?scope=range&from&to` (≤ 62 days) feeds the month view. `GET /api/meetings/:code/calendar.ics` serves *Add to calendar*.
+* `GET /api/meetings/:code/summary` returns the class page. Everyone who may see the class gets the meeting and its viewable recordings. Only the host also gets private notes (`PUT /:code/notes`), attendance, guests and the chat transcript.
+
 ## 4. Reliability behaviour (Phase 1)
 
 * **ICE failure**: on `failed`, or `disconnected` for more than 4 s, the offering side fetches fresh ICE servers (`ice:refresh`) and runs an ICE restart.
@@ -81,7 +117,9 @@ Mute one or all (pauses the mic producer on the SFU), "students may unmute thems
 | users | name, email (unique), passwordHash (bcrypt 12), role (teacher/student/admin), emailVerified, status, teacherProfile, studentProfile |
 | refreshtokens | user, tokenHash (sha256), family, expiresAt, revokedAt, replacedBy |
 | onetimetokens | user, purpose (email_verify / password_reset), tokenHash, expiresAt, usedAt |
-| meetings | code (unique, random), host, title, type, status, scheduledStart/End, startedAt/endedAt, lastActiveAt, settings {waitingRoom, passwordHash, maxParticipants}, inviteNonce |
+| meetings | code (unique, random), host, title, type, status, scheduledStart/End, startedAt/endedAt, lastActiveAt, settings {waitingRoom, passwordHash, maxParticipants, permissions…}, locked, bannedUsers, invitees, notes (host-only), inviteNonce |
+| recordings | meeting, host, startedBy, title, status, startedAt/endedAt, durationSec, sizeBytes, file/thumbnail (relative, never serialised), shareWithParticipants, consent [{user, name, decision, at}], error |
+| chatmessages / whiteboards | per-meeting chat log (soft delete) and board operations |
 | attendances | meeting, user, role, joinedAt, leftAt, durationSec (one document per continuous session) |
 | auditlogs | actor, action, targetType, targetId, ip, meta |
 
@@ -98,7 +136,7 @@ Mute one or all (pauses the mic producer on the SFU), "students may unmute thems
 |---|---|---|
 | 1 | Project init, auth, dashboard, meeting create/join, waiting room, 1-to-1 WebRTC, Socket.IO signalling, coturn config, diagnostics | Implemented and tested here (see testing.md) |
 | 2 | mediasoup SFU, group meetings up to 20, host controls (mute/mute-all/remove/lock/permissions), raise hand, grid & speaker layouts, premium redesign | Implemented and tested here (see testing.md) |
-| 3 | Screen share, chat, whiteboard, attendance UI, teacher controls | Attendance *recording* exists from Phase 1; the rest is not started |
-| 4 | Server-side recording (mediasoup → PlainTransport → FFmpeg/GStreamer), dashboards, calendar | Not started |
+| 3 | Screen share (SFU + P2P), chat (persisted, moderated), whiteboard (live strokes, undo/redo, persisted), attendance CSV, classroom permissions, landing page, sound cues | Implemented and tested here (see testing.md) |
+| 4 | Consent-based recording (mediasoup → DirectTransport → per-track files → FFmpeg MP4), archive & signed playback, invitations + .ics, calendar, class pages (notes, attendance, transcript), dark-first shell | Implemented and tested here (see testing.md) |
 | 5 | Admin dashboard, hardening, monitoring, Capacitor apps | Not started |
 | 6 | Production deployment, load tests, multi-server, DR | Docs started (deployment.md) |

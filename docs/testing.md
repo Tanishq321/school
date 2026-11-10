@@ -11,6 +11,14 @@ Each test file uses a throwaway database. Coverage:
 - **auth.test.js**: registration validation, login (generic errors), `/me` protection, refresh rotation + reuse detection + family revocation, foreign-origin refresh refused, logout, email verification (single use), password reset (revokes sessions, no account enumeration), security headers.
 - **meetings.test.js**: role and verification gates, code format and uniqueness, scheduled-meeting validation, host vs guest views, malformed/unknown codes, password enforcement, invite-token bypass, invite rotation, TURN credential format (secret never leaked), host-only update/end/attendance, closed meetings refuse joins, listing, automatic expiry.
 - **sfu.test.js** (real mediasoup worker): SFU mode and capacity, admit all, non-member and cross-user id rejection, one transport per direction, source/kind validation, producer announcement → consume → resume, late-joiner producer list, host mute pauses the producer, mute all, self-unmute off blocks resume and forces paused mic, raise hand, grant speak, lock (423 for newcomers, returning members allowed), remove (consumers closed, peer removed, REST 403), router closed on end.
+- **classroom.test.js** (real mediasoup worker): chat broadcast + persistence, markup kept as text, empty/oversized rejected, history for late joiners, host-only delete (soft, persisted), host-only chat mode, rate limiting; whiteboard open (host only), drawing permission, strict op validation (coordinates, colour, tool, shape points, unknown fields, empty text, duplicates), live strokes relayed but not stored, erase limited to author/host, redo, persistence (flat point storage), host-only clear; screen-share permission, single slot, host take-over, SFU screen producer requires the slot, revoking permission closes it, leaving frees it.
+- **recording.test.js** (real mediasoup worker plus FFmpeg feeding synthetic Opus/VP8 RTP into producers):
+  - Invitations: emails with `.ics`, case-insensitive dedupe, the invitee's calendar range (an outsider's range doesn't include it, the 62-day cap is enforced), `.ics` export, the summary page (host-only notes, attendance, guests, transcript; an outsider gets 403), and invitees skip the waiting room.
+  - Recording: host-only start, consent requested with state broadcast, and a duplicate start refused.
+  - **Privacy proof by audio analysis:** the student's 1500 Hz tone is absent from the film before they agreed and present after (> 20 dB band difference), while the host's 440 Hz tone is there throughout.
+  - The final file is H.264 1280×720 + AAC with a poster, and raw tracks are cleaned up.
+  - Access: private until shared. Range streaming returns 206 / 416. Tampered and cross-recording tokens get 401. Poster-only tokens can't stream. Attendees and invitees can watch only after sharing, and un-sharing revokes outstanding links. Outsiders never get access.
+  - Delete removes the files. When nobody consents, nothing is kept. Ending the class stops and finalises. The retention sweep removes old recordings. A path-traversal guard is in place.
 - **sockets.test.js**: handshake auth (invalid token, unverified user), waiting room + host notifications, waiting users can't signal, non-hosts can't admit, admission events, signalling relayed only between members and tagged with sender, payload validation, media-state broadcast, ICE refresh, 1-to-1 capacity enforcement, join tokens bound to their user, reconnect grace period (attendance not split), seat freed after grace, host-only end, attendance closure and totals, joining before host + auto-admit, idle meeting auto-end.
 
 ## 2. End-to-end WebRTC tests (Puppeteer + Chrome + coturn)
@@ -28,32 +36,30 @@ It runs twice: **direct** and **TURN relay forced** (`iceTransportPolicy: relay`
 
 What this proves and what it doesn't: the WebRTC stack is real (ICE, DTLS, SRTP, VP8/Opus encode and decode, TURN allocation and relaying). The camera and microphone are Chrome's built-in fake capture devices (test pattern + beep), because the CI machine has no camera. Both browsers run on one host. It does **not** replace testing on physical devices across real networks (below).
 
-## 3. Results of the last run (Phase 2)
+## 3. Results of the last run (Phase 4)
 
 | Suite | Result |
 |---|---|
-| Backend (Vitest): auth, meetings, sockets, **SFU + host controls on a real mediasoup worker** | 44 / 44 passed |
-| E2E peer-to-peer mode (`node run-e2e.mjs`): direct + TURN relay, restart mid-call | 29 / 29 |
-| E2E SFU mode (`E2E_SFU=1 node run-e2e.mjs`): 1-to-1 direct + TURN relay into the SFU + restart recovery | 29 / 29 |
-| E2E SFU **group class**: 1 teacher + 4 students in 5 separate browsers | 18 / 18 |
-| E2E split origins (Vercel-style), Phase 1 build | 29 / 29 (3 runs) |
-| TURN script against local coturn | UDP + TCP allocations, 0 % loss; wrong secret rejected |
+| Backend (Vitest): auth, meetings, sockets, SFU + host controls, chat / whiteboard / screen share, **recording, invitations, calendar, class pages** | 65 / 65 |
+| E2E peer-to-peer (`node run-e2e.mjs`): direct + TURN relay (attendance now checked through the new class page) | 35 / 35 |
+| E2E split origins (`E2E_SPLIT=1`, Vercel-style proxy + direct sockets) | 35 / 35 |
+| E2E SFU (`E2E_SFU=1`): direct, relay, 5-browser group class, **real recording** | 63 / 63 |
 
-The group scenario verifies through the real UI:
-- all five see four live videos;
-- remote audio reaches the teacher;
-- grid ↔ speaker view;
-- "admit all";
-- host mute (checked on the SFU);
-- self-unmute off → student can't unmute → raises hand → host allows → audible again;
-- remove (can't rejoin);
-- lock (newcomer refused);
-- the remaining students still receive everyone;
-- end for all.
+New Phase 4 E2E scenario (`recording`, two real Chrome instances through the SFU, with simulcast):
+1. The teacher clicks *Record this class* → *Begin recording*.
+2. The red lamp appears for both people, and the student gets the consent dialog. The student chooses *Include me*: the dialog closes, their lamp reads *Included*, and the teacher's lamp shows "2 included".
+3. About 10 s of class pass, with a presentation in the middle. The teacher stops; the lamp disappears for the student.
+4. The server composes the MP4. ffprobe confirms H.264 1280×720 + AAC, at least 8 s, and `volumedetect` confirms real sound (Chrome's fake mic beep, peak −2.5 dB).
+5. The archive shows the poster. The player loads the film, plays it and seeks near the end (HTTP Range) at 1280×720.
+6. The student's archive is empty until the teacher toggles *Share with the class*, and then it lists the film.
+7. The Today, Calendar, Classes, Recordings, player and consent screens are captured for review.
 
-On this 2-vCPU test box, five Chrome instances each encoding 3 simulcast layers sometimes push the badge to "Fair". That reflects the box running both the clients and the server, not network conditions.
+New Phase 3 E2E steps, run in all four 1-to-1 modes (P2P direct, P2P relay, SFU direct, SFU relay):
+- **Chat:** the student writes, the teacher gets an unread badge, the link is rendered with `noopener`, and the teacher deletes the message for everyone.
+- **Presentation:** the teacher shares a screen (Chrome's synthetic capture) and the student's screen stage shows moving frames; students have no present button without permission.
+- **Whiteboard:** the teacher draws a freehand stroke and the student sees it (operation count syncs). The student has no tools until the teacher enables drawing; then the student draws a rectangle the teacher receives, and the student's undo removes it for the teacher.
 
-Environment: Ubuntu 24.04, Node 22.23, mediasoup 3.32.2, mediasoup-client 3.26.0, Chrome for Testing 153, coturn 4.6.1, FerretDB 1.24 as a MongoDB stand-in (run the suites against real MongoDB before release).
+Phase 3 E2E steps (chat, presentation, whiteboard) still run in all four 1-to-1 modes. Environment and caveats are as before: FerretDB stands in for MongoDB here (it needed the whiteboard's points stored as a flat list; real MongoDB is unaffected), and physical-device testing is still outstanding.
 
 ## 4. Manual test matrix (still to do on real devices)
 

@@ -127,6 +127,30 @@ MEDIASOUP_PORT_BASE=40000
 
 mediasoup ships a prebuilt worker for Linux x64; if your platform needs a build, install `python3 make g++` first. On startup the log shows `mediasoup workers started` with the port range, and `/api/health` reports `"mediaMode":"sfu"`. If coturn runs on the same host, add `allowed-peer-ip=<server private IP>` to `turnserver.conf` so relayed clients can reach the SFU. Size: about 1 vCPU per ~40–60 concurrent forwarded video streams; a 20-person class with simulcast is comfortable on 2 vCPU.
 
+## 8c. Recording (optional)
+
+Recording requires the SFU (8b) and FFmpeg:
+
+```bash
+sudo apt install -y ffmpeg          # needs libx264 + aac (Ubuntu/Debian builds include both)
+sudo install -d -o videoplatform -g videoplatform -m 0750 /var/lib/video-platform/recordings
+```
+
+```ini
+RECORDING_ENABLED=true
+RECORDINGS_DIR=/var/lib/video-platform/recordings
+RECORDING_RETENTION_DAYS=30
+RECORDING_MAX_MINUTES=240
+RECORDING_MIN_FREE_MB=2048
+RECORDING_PLAYBACK_SECRET=<random 48+ chars>
+```
+
+- **Live capture** writes the original Opus/VP8 packets with no re-encoding: about 1 MB per voice-hour plus roughly 0.5–1.5 GB per hour for the featured picture. CPU cost while recording is negligible.
+- **Processing** runs one FFmpeg job at a time after each class. It takes roughly 0.2–0.5× the class length on 2 vCPU (veryfast x264). The final MP4 is about 300–600 MB per hour at 720p.
+- **Disk:** start-up is refused below `RECORDING_MIN_FREE_MB` free. Watch the volume.
+- **Backups:** back up the directory separately from MongoDB (it is large and bounded by retention). An encrypted volume is recommended (see security.md).
+- **Nginx:** `/api/recordings/*/media` streams large files with Range requests. The site config already proxies `/api` with buffering suitable for this. If you add `proxy_max_temp_file_size 0;` to that location, Nginx won't spool films to disk.
+
 ## 9. TURN test procedure
 
 1. From a machine **outside** the server's network (e.g. your laptop on mobile hotspot):
