@@ -11,6 +11,8 @@ import TodayPage from './pages/TodayPage.jsx';
 import CalendarPage from './pages/CalendarPage.jsx';
 import ClassesPage from './pages/ClassesPage.jsx';
 import ClassDetailPage from './pages/ClassDetailPage.jsx';
+import StudentsPage, { StudentPage } from './pages/StudentsPage.jsx';
+import TwoStepGate from './components/TwoStepGate.jsx';
 import RecordingsPage from './pages/RecordingsPage.jsx';
 import RecordingPage from './pages/RecordingPage.jsx';
 // Heavy media code (mediasoup-client, WebRTC helpers) loads only when entering a room.
@@ -50,9 +52,16 @@ function MemberArea() {
 
 /** Administration is for administrators; everyone else is sent home (the server refuses them anyway). */
 function AdminOnly({ children }) {
-  const { user } = useAuth();
+  const { user, config } = useAuth();
   if (user?.role !== 'admin') return <Navigate to="/" replace />;
+  if (config.adminRequiresTwoFactor && !user.twoFactor?.enabled) return <TwoStepGate />;
   return <Suspense fallback={<FullPageSpinner />}>{children}</Suspense>;
+}
+
+function TeachersOnly({ children }) {
+  const { user } = useAuth();
+  if (user?.role !== 'teacher' && user?.role !== 'admin') return <Navigate to="/" replace />;
+  return children;
 }
 
 function GuestOnly({ children }) {
@@ -77,6 +86,8 @@ export default function App() {
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/classes" element={<ClassesPage />} />
         <Route path="/classes/:code" element={<ClassDetailPage />} />
+        <Route path="/students" element={<TeachersOnly><StudentsPage /></TeachersOnly>} />
+        <Route path="/students/:email" element={<TeachersOnly><StudentPage /></TeachersOnly>} />
         <Route path="/recordings" element={<RecordingsPage />} />
         <Route path="/recordings/:id" element={<RecordingPage />} />
         <Route path="/diagnostics" element={<Suspense fallback={<FullPageSpinner />}><DiagnosticsPage /></Suspense>} />

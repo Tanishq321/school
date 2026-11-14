@@ -76,7 +76,7 @@ export default function RecordingsPage() {
             : 'Recordings appear here after a class is recorded.'}
         </Empty>
       ) : (
-        <div className="grid gap-x-7 gap-y-10 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="reveal-stagger grid gap-x-7 gap-y-10 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((r) => (
             <RecordingCard key={r.id} rec={r} />
           ))}

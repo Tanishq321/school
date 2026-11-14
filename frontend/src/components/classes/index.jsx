@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarPlus, Copy, KeyRound, Lock, Mail, Radio, Trash2, Users } from 'lucide-react';
+import { BookOpenCheck, CalendarPlus, Copy, KeyRound, Lock, Mail, Radio, Repeat, Trash2, Users } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import { api, API_BASE, getAccessToken, freshAccessToken } from '../../services/api.js';
-import { Alert, Button, Field, Modal, Toggle } from '../ui/index.jsx';
+import { Alert, Button, Field, Modal, Select, Toggle } from '../ui/index.jsx';
 import { copyText, toLocalInput } from '../../utils/format.js';
 
 export function useMeetings(scope, { from, to } = {}) {
@@ -56,22 +56,10 @@ export function StatusBadge({ status }) {
 export function AgendaRow({ meeting: m, onChanged }) {
   const navigate = useNavigate();
   const toast = useToast();
-  const [busy, setBusy] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const start = new Date(m.scheduledStart);
   const today = start.toDateString() === new Date().toDateString();
   const closed = ['ended', 'expired', 'cancelled'].includes(m.status);
-  const cancel = async () => {
-    if (!window.confirm(`Cancel “${m.title}”? People with the link won't be able to join.`)) return;
-    setBusy(true);
-    try {
-      await api(`/meetings/${m.code}`, { method: 'DELETE' });
-      toast('Class cancelled');
-      onChanged();
-    } catch (err) {
-      toast(err.message, { tone: 'error' });
-      setBusy(false);
-    }
-  };
   return (
     <li className="grid grid-cols-[5.5rem_1fr] items-center gap-x-6 gap-y-3 py-6 sm:grid-cols-[7rem_1fr_auto]">
       <div className="leading-none">
@@ -87,6 +75,16 @@ export function AgendaRow({ meeting: m, onChanged }) {
           </Link>
           {m.status === 'live' && <StatusBadge status="live" />}
           {m.invited && <span className="rounded-full border border-brand-400/40 px-2 py-0.5 text-[11px] tracking-wide text-brand-600 dark:text-brand-300">Your class</span>}
+          {m.seriesId && (
+            <span className="inline-flex shrink-0 items-center gap-1 text-[11px] tracking-wide text-ink-2 dark:text-slate-400" title="Part of a weekly series">
+              <Repeat size={12} strokeWidth={1.6} /> Weekly
+            </span>
+          )}
+          {m.homeworkOpen > 0 && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand-400/12 px-2 py-0.5 text-[11px] tracking-wide text-brand-700 dark:text-brand-300">
+              <BookOpenCheck size={12} strokeWidth={1.6} /> {m.homeworkOpen} to do
+            </span>
+          )}
         </div>
         <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-ink-2 dark:text-slate-400">
           <span>{m.durationMinutes} minutes</span>
@@ -130,14 +128,59 @@ export function AgendaRow({ meeting: m, onChanged }) {
               <Copy size={14} strokeWidth={1.6} /> Invitation
             </Button>
             {m.status !== 'live' && (
-              <Button size="sm" variant="ghost" onClick={cancel} loading={busy} aria-label="Cancel class">
+              <Button size="sm" variant="ghost" onClick={() => setCancelling(true)} aria-label="Cancel class">
                 <Trash2 size={14} strokeWidth={1.6} />
               </Button>
             )}
           </>
         )}
       </div>
+      {m.isHost && <CancelClassModal meeting={m} open={cancelling} onClose={() => setCancelling(false)} onDone={onChanged} />}
     </li>
+  );
+}
+
+/**
+ * Cancel a class. A lesson in a weekly series can be cancelled alone, or with every later lesson.
+ * The student is told by email, with a calendar file that removes the lessons.
+ */
+export function CancelClassModal({ meeting: m, open, onClose, onDone }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(null);
+  const cancel = async (scope) => {
+    setBusy(scope);
+    try {
+      const { cancelled } = await api(`/meetings/${m.code}?scope=${scope}`, { method: 'DELETE' });
+      toast(cancelled > 1 ? `${cancelled} lessons cancelled${m.invitees?.[0] ? '. Your student has been told.' : '.'}` : `Class cancelled${m.invitees?.[0] ? '. Your student has been told.' : '.'}`, { tone: 'success' });
+      onClose();
+      onDone?.();
+    } catch (err) {
+      toast(err.message, { tone: 'error' });
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <Modal open={open} onClose={onClose} title={m.seriesId ? 'Cancel a lesson in a series' : 'Cancel this class'}>
+      <p className="text-ink-2 dark:text-slate-400">
+        <span className="font-medium text-ink dark:text-vellum">{m.title}</span>,{' '}
+        {new Date(m.scheduledStart).toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })}.
+        {m.invitees?.[0] ? ` ${m.invitees[0]} receives an email, and the lesson leaves their calendar.` : ' Nobody with the link will be able to join.'}
+      </p>
+      <div className="mt-7 flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <Button variant="ghost" onClick={onClose}>
+          Keep it
+        </Button>
+        {m.seriesId && (
+          <Button variant="secondary" onClick={() => cancel('following')} loading={busy === 'following'} disabled={Boolean(busy)}>
+            This and following lessons
+          </Button>
+        )}
+        <Button variant="danger" onClick={() => cancel('one')} loading={busy === 'one'} disabled={Boolean(busy)}>
+          {m.seriesId ? 'This lesson only' : 'Cancel the class'}
+        </Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -170,7 +213,17 @@ export function downloadAttendance(meeting, rows) {
 
 
 /** Schedule (or reschedule) a class. `initialStart` pre-fills the date, e.g. from the calendar. */
-export function ScheduleModal({ open, onClose, onSaved, initialStart, meeting }) {
+const REPEAT = [
+  { value: '1', label: 'Does not repeat' },
+  { value: '4', label: 'Weekly, 4 lessons' },
+  { value: '6', label: 'Weekly, 6 lessons' },
+  { value: '8', label: 'Weekly, 8 lessons' },
+  { value: '10', label: 'Weekly, 10 lessons' },
+  { value: '12', label: 'Weekly, a term (12)' },
+  { value: '26', label: 'Weekly, half a year (26)' },
+];
+
+export function ScheduleModal({ open, onClose, onSaved, initialStart, initialInvitee, meeting }) {
   const editing = Boolean(meeting);
   const initial = () => {
     if (meeting) {
@@ -179,7 +232,7 @@ export function ScheduleModal({ open, onClose, onSaved, initialStart, meeting })
     let d = initialStart ? new Date(initialStart) : new Date(Date.now() + 60 * 60_000);
     if (!initialStart) d.setMinutes(d.getMinutes() < 30 ? 30 : 60, 0, 0);
     if (d.getTime() < Date.now()) d = new Date(Date.now() + 30 * 60_000);
-    return { title: '', start: toLocalInput(d), duration: 60, password: '', waitingRoom: true, invitees: [], description: '' };
+    return { title: '', start: toLocalInput(d), duration: 60, password: '', waitingRoom: true, invitees: initialInvitee ? [initialInvitee] : [], description: '', repeat: '1' };
   };
   const [form, setForm] = useState(initial);
   const [state, setState] = useState({});
@@ -204,10 +257,10 @@ export function ScheduleModal({ open, onClose, onSaved, initialStart, meeting })
         invitees: form.invitees,
         ...(form.password ? { password: form.password } : {}),
       };
-      const { meeting: saved } = editing
+      const { meeting: saved, series } = editing
         ? await api(`/meetings/${meeting.code}`, { method: 'PATCH', body })
-        : await api('/meetings', { method: 'POST', body: { type: 'scheduled', ...body } });
-      onSaved(saved);
+        : await api('/meetings', { method: 'POST', body: { type: 'scheduled', ...body, ...(Number(form.repeat) > 1 ? { repeatWeeks: Number(form.repeat) } : {}) } });
+      onSaved(saved, series);
     } catch (err) {
       setState({ error: err.message });
     }
@@ -222,6 +275,18 @@ export function ScheduleModal({ open, onClose, onSaved, initialStart, meeting })
           <Field label="Begins" type="datetime-local" required value={form.start} onChange={(e) => setForm({ ...form, start: e.target.value })} />
           <Field label="Minutes" type="number" min={5} max={600} step={5} required value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} />
         </div>
+        {!editing && (
+          <div>
+            <Select label="Repeat" options={REPEAT} value={form.repeat} onChange={(e) => setForm({ ...form, repeat: e.target.value })} data-testid="repeat" />
+            {Number(form.repeat) > 1 && (
+              <p className="mt-1.5 text-xs text-ink-2 dark:text-slate-400">
+                Every {new Date(form.start).toLocaleDateString(undefined, { weekday: 'long' })} at this time, until{' '}
+                {new Date(new Date(form.start).getTime() + (Number(form.repeat) - 1) * 7 * 86_400_000).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}. Each lesson can be moved or cancelled on its own.
+              </p>
+            )}
+          </div>
+        )}
+        {editing && meeting.seriesId && <p className="text-xs text-ink-2 dark:text-slate-400">This changes this lesson only; the rest of the series keeps its times.</p>}
         <Field
           label="Student’s email"
           type="email"
@@ -248,12 +313,19 @@ export function ScheduleModal({ open, onClose, onSaved, initialStart, meeting })
             Cancel
           </Button>
           <Button type="submit" loading={state.loading}>
-            <CalendarPlus size={16} strokeWidth={1.6} /> {editing ? 'Save changes' : form.invitees.length ? 'Schedule & invite' : 'Schedule'}
+            <CalendarPlus size={16} strokeWidth={1.6} /> {editing ? 'Save changes' : Number(form.repeat) > 1 ? `Schedule ${form.repeat} lessons` : form.invitees.length ? 'Schedule & invite' : 'Schedule'}
           </Button>
         </div>
       </form>
     </Modal>
   );
+}
+
+/** The confirmation after scheduling: one class or a series, invited or not. */
+export function scheduledMessage(m, series, copied) {
+  const what = series?.count > 1 ? `${series.count} weekly lessons scheduled` : 'Scheduled';
+  if (m.invitees?.length) return `${what}. ${series?.count > 1 ? 'One invitation with every date' : 'Invitation'} sent to ${m.invitees[0]}.`;
+  return copied ? `${what}. Invitation link copied.` : `${what}.`;
 }
 
 /** Re-renders every `ms` so countdowns stay live. */
@@ -292,17 +364,17 @@ export function RecordingCard({ rec, className = '' }) {
   const ready = rec.status === 'ready';
   return (
     <Link to={`/recordings/${rec.id}`} className={`group block ${className}`} viewTransition>
-      <div className="relative aspect-video overflow-hidden rounded-[18px] border border-line/80 bg-night shadow-[0_24px_50px_-30px_rgba(10,14,26,.9)] dark:border-night-line">
+      <div className="relative aspect-video overflow-hidden rounded-[18px] border border-line/80 bg-paper-2 shadow-[0_24px_50px_-30px_rgba(60,46,24,.5)] dark:border-night-line dark:bg-night dark:shadow-[0_24px_50px_-30px_rgba(10,14,26,.9)]">
         {ready && rec.posterUrl && !broken ? (
           <img src={mediaSrc(rec.posterUrl)} alt="" loading="lazy" onError={() => setBroken(true)} className="h-full w-full object-cover transition duration-700 ease-out group-hover:scale-[1.035]" />
         ) : (
           <div className="lamplight flex h-full w-full items-center justify-center">
             {rec.status === 'processing' || rec.status === 'recording' ? (
-              <span className="flex items-center gap-2 text-xs tracking-[0.2em] text-vellum/70 uppercase">
-                <span className="size-1.5 animate-pulse rounded-full bg-brand-300" /> {rec.status === 'recording' ? 'Recording' : 'Being prepared'}
+              <span className="flex items-center gap-2 text-xs tracking-[0.2em] text-hi/70 uppercase">
+                <span className="size-1.5 animate-pulse rounded-full bg-brass" /> {rec.status === 'recording' ? 'Recording' : 'Being prepared'}
               </span>
             ) : (
-              <span className="font-display text-4xl text-vellum/20 italic">{rec.status === 'failed' ? 'Unavailable' : ''}</span>
+              <span className="font-display text-4xl text-hi/25 italic">{rec.status === 'failed' ? 'Unavailable' : ''}</span>
             )}
           </div>
         )}

@@ -52,7 +52,7 @@ export default function ClassesPage() {
         <Empty>{q ? 'No class matches that search.' : 'Classes appear here once they have been held.'}</Empty>
       ) : (
         groups.map(([month, items]) => (
-          <section key={month}>
+          <section key={month} className="reveal">
             <h2 className="mb-3 flex items-center gap-4 font-display text-xl italic text-ink-2 dark:text-vellum/60">
               {month}
               <span className="hairline flex-1" />

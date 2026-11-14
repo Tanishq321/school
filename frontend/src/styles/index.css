@@ -12,12 +12,12 @@
   --font-sans: 'Hanken Grotesk Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-display: 'Bodoni Moda Variable', 'Didot', 'Bodoni 72', Georgia, serif;
 
-  /* Light: porcelain & ink */
-  --color-paper: #f4f3ef;
-  --color-paper-2: #eae8e2;
+  /* Light: warm ivory & ink (quiet luxury: paper, stone, ink, brass only as a fine accent) */
+  --color-paper: #f4f1ea;
+  --color-paper-2: #ebe5d8;
   --color-ink: #161c2c;
-  --color-ink-2: #535a6d;
-  --color-line: #d9d5cb;
+  --color-ink-2: #565c6b;
+  --color-line: #dcd3c1;
   --color-vellum: #ece6da;
 
   /* Dark: midnight lacquer */
@@ -41,6 +41,27 @@
   --color-danger-600: #8e2f28;
 
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/*
+ * Theme-aware ink for "material" surfaces (lamplight panels, the navigation spine, the landing page):
+ * `hi` is the strong foreground, `brass` the accent that stays legible on that ground.
+ * Declared `inline` so they resolve where used, and flip inside any `.dark` subtree.
+ */
+@theme inline {
+  --color-hi: var(--hi);
+  --color-brass: var(--brass);
+  --color-ground: var(--ground);
+}
+:root {
+  --hi: #161c2c;
+  --brass: #86663a;
+  --ground: #f4f1ea;
+}
+.dark {
+  --hi: #ece6da;
+  --brass: #d8be8c;
+  --ground: #0f1628;
 }
 
 @layer base {
@@ -93,12 +114,43 @@
   .label {
     @apply mb-1.5 block text-[13px] font-medium tracking-wide text-ink-2 dark:text-slate-300;
   }
-  /* A pool of warm desk-lamp light falling on lacquer: the signature surface. */
+  /*
+   * The signature surface. By night: a pool of desk-lamp light on midnight lacquer.
+   * By day: morning light across ivory linen, with the same brass warmth in the corner.
+   */
   .lamplight {
+    color: var(--hi);
+    background:
+      radial-gradient(70% 60% at 18% -8%, rgba(255, 255, 255, 0.95), transparent 62%),
+      radial-gradient(55% 45% at 100% 112%, rgba(198, 162, 106, 0.2), transparent 70%),
+      repeating-linear-gradient(90deg, rgba(120, 96, 60, 0.018) 0 1px, transparent 1px 4px),
+      #ece5d6;
+  }
+  .lamplight:where(.dark, .dark *) {
     background:
       radial-gradient(70% 55% at 22% -5%, rgba(216, 190, 140, 0.2), transparent 65%),
       radial-gradient(50% 40% at 100% 110%, rgba(110, 83, 44, 0.18), transparent 70%),
       var(--color-night);
+  }
+  /* Always lacquer, whatever the theme: the cinema, the meeting room, physical objects. */
+  .lacquer {
+    color: #ece6da;
+    background:
+      radial-gradient(70% 55% at 22% -5%, rgba(216, 190, 140, 0.2), transparent 65%),
+      radial-gradient(50% 40% at 100% 110%, rgba(110, 83, 44, 0.18), transparent 70%),
+      var(--color-night);
+  }
+  /* A raised panel on either ground: soft by day, deep by night. */
+  .elevated {
+    box-shadow:
+      inset 0 0 0 1px rgba(141, 108, 59, 0.16),
+      0 1px 0 rgba(255, 255, 255, 0.7) inset,
+      0 40px 80px -48px rgba(60, 46, 24, 0.45);
+  }
+  .elevated:where(.dark, .dark *) {
+    box-shadow:
+      inset 0 0 0 1px rgba(216, 190, 140, 0.14),
+      0 40px 90px -50px rgba(5, 8, 18, 1);
   }
   /* Engraved brass hairline. */
   .hairline {
@@ -125,6 +177,16 @@
 }
 .sheen:hover::after {
   opacity: 1;
+}
+
+/* Switching theme: colours cross-fade briefly instead of snapping. */
+.theme-switching,
+.theme-switching * {
+  transition:
+    background-color 0.4s var(--ease-out-quint),
+    color 0.4s var(--ease-out-quint),
+    border-color 0.4s var(--ease-out-quint),
+    fill 0.4s var(--ease-out-quint) !important;
 }
 
 /* Page transitions (View Transitions API, where supported). */
@@ -187,8 +249,14 @@
  * Phase 5 materials: engraved metal, foil, vellum.
  * ------------------------------------------------------------------------------------------- */
 
-/* Foil lettering: a brass gradient clipped to the glyphs. */
+/* Foil lettering: a brass gradient clipped to the glyphs (deeper by day so it reads on ivory). */
 .foil {
+  background: linear-gradient(100deg, #b58c4e 0%, #8d6c3b 40%, #5e4626 64%, #a37c42 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.foil:where(.dark, .dark *) {
   background: linear-gradient(100deg, #f3e2b8 0%, #c6a26a 38%, #8d6c3b 62%, #e9d3a0 100%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -236,6 +304,11 @@
 .plate {
   @apply rounded-[18px] border border-line/80 bg-white/60 dark:border-night-line dark:bg-night-2/60;
   box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 14px 30px -26px rgba(60, 46, 24, 0.35);
+}
+.plate:where(.dark, .dark *) {
+  box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.05),
     inset 0 -18px 30px -24px rgba(0, 0, 0, 0.35);
 }
@@ -255,4 +328,105 @@
 
 kbd {
   @apply rounded-md border border-line bg-paper-2 px-1.5 py-0.5 font-sans text-[11px] text-ink-2 dark:border-night-line dark:bg-night-3 dark:text-slate-300;
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * Scroll choreography. The finished state is the default: browsers without scroll-driven
+ * animations (or people who asked for reduced motion) simply see the page, complete.
+ * ------------------------------------------------------------------------------------------- */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(42px);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+@keyframes rule-draw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes drift {
+  from {
+    transform: translateY(var(--drift-from, 60px));
+  }
+  to {
+    transform: translateY(var(--drift-to, -60px));
+  }
+}
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    /* Rises into place as it enters the viewport. */
+    .reveal {
+      animation: rise-in linear both;
+      animation-timeline: view();
+      animation-range: entry 5% cover 28%;
+    }
+    /* Children of a .reveal-stagger rise one after another. */
+    .reveal-stagger > * {
+      animation: rise-in linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 24%;
+    }
+    .reveal-stagger > *:nth-child(2) {
+      animation-range: entry 6% cover 30%;
+    }
+    .reveal-stagger > *:nth-child(3) {
+      animation-range: entry 12% cover 36%;
+    }
+    .reveal-stagger > *:nth-child(n + 4) {
+      animation-range: entry 18% cover 42%;
+    }
+    /* Hairlines draw themselves across. */
+    .rule-draw {
+      transform-origin: left;
+      animation: rule-draw linear both;
+      animation-timeline: view();
+      animation-range: entry 10% cover 40%;
+    }
+    /* Slow parallax for ornaments: they move a little slower than the page. */
+    .drift {
+      animation: drift linear both;
+      animation-timeline: view();
+    }
+    /* Reading progress: a brass hairline across the top of the window. */
+    .scroll-progress {
+      transform-origin: left;
+      animation: grow-x linear both;
+      animation-timeline: scroll(root);
+    }
+  }
+}
+.scroll-progress {
+  transform: scaleX(0);
+}
+@supports not (animation-timeline: scroll()) {
+  .scroll-progress {
+    display: none;
+  }
+}
+
+@keyframes cue {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(200%);
+  }
 }

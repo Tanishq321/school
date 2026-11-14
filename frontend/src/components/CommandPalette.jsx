@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, CalendarDays, Clapperboard, CornerDownLeft, Library, LogOut, Moon, Search, ShieldCheck, Sunrise, UserRound, Users, Video } from 'lucide-react';
+import { Activity, GraduationCap, CalendarDays, Clapperboard, CornerDownLeft, Library, LogOut, Monitor, Moon, Search, ShieldCheck, Sun, Sunrise, UserRound, Users, Video } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useTheme } from '../contexts/ThemeContext.jsx';
 import { useToast } from '../contexts/ToastContext.jsx';
@@ -9,7 +9,7 @@ import { api } from '../services/api.js';
 /** ⌘K / Ctrl+K: go anywhere, open a room, find a class, without leaving the keyboard. */
 export default function CommandPalette({ open, onClose }) {
   const { user, logout } = useAuth();
-  const { toggle } = useTheme();
+  const { setPreference } = useTheme();
   const navigate = useNavigate();
   const toast = useToast();
   const [q, setQ] = useState('');
@@ -35,6 +35,7 @@ export default function CommandPalette({ open, onClose }) {
       { group: 'Go to', label: 'Today', icon: Sunrise, run: go('/') },
       { group: 'Go to', label: 'Calendar', icon: CalendarDays, run: go('/calendar') },
       { group: 'Go to', label: 'Classes', icon: Library, run: go('/classes') },
+      ...(canHost ? [{ group: 'Go to', label: 'Students', icon: GraduationCap, run: go('/students'), keywords: 'register roster pupils' }] : []),
       { group: 'Go to', label: 'Recordings', icon: Clapperboard, run: go('/recordings') },
       { group: 'Go to', label: 'Account and security', icon: UserRound, run: go('/profile'), keywords: 'profile password two-step devices' },
       { group: 'Go to', label: 'Connection test', icon: Activity, run: go('/diagnostics') },
@@ -62,7 +63,9 @@ export default function CommandPalette({ open, onClose }) {
             },
           ]
         : []),
-      { group: 'Actions', label: 'Switch light / dark', icon: Moon, run: toggle, keywords: 'theme' },
+      { group: 'Appearance', label: 'Follow my device', icon: Monitor, run: () => setPreference('system'), keywords: 'theme auto system light dark' },
+      { group: 'Appearance', label: 'Light', icon: Sun, run: () => setPreference('light'), keywords: 'theme day' },
+      { group: 'Appearance', label: 'Dark', icon: Moon, run: () => setPreference('dark'), keywords: 'theme night' },
       { group: 'Actions', label: 'Sign out', icon: LogOut, run: async () => (await logout(), navigate('/login')) },
       ...classes.map((m) => ({
         group: 'Upcoming classes',
@@ -74,7 +77,7 @@ export default function CommandPalette({ open, onClose }) {
     ];
     const term = q.trim().toLowerCase();
     return term ? base.filter((i) => `${i.label} ${i.group} ${i.keywords || ''}`.toLowerCase().includes(term)) : base;
-  }, [q, classes, user.role, canHost, navigate, toggle, logout, toast]);
+  }, [q, classes, user.role, canHost, navigate, setPreference, logout, toast]);
 
   useEffect(() => setIndex(0), [q]);
   useEffect(() => {

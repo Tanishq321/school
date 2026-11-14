@@ -66,6 +66,22 @@ export function AuthProvider({ children }) {
     return u;
   }, []);
 
+  // Keep the account's time zone in step with the device, so emails show class times as the person lives them.
+  useEffect(() => {
+    if (status !== 'authed' || !user) return;
+    let zone;
+    try {
+      zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+      return;
+    }
+    if (zone && zone !== user.timeZone) {
+      api('/auth/me', { method: 'PATCH', body: { timeZone: zone } })
+        .then(({ user: u }) => setUser(u))
+        .catch(() => {});
+    }
+  }, [status, user]);
+
   // Mirrors the server policy; the server still enforces it.
   const needsVerification = Boolean(user && config.requireEmailVerification && !user.emailVerified);
   const value = useMemo(

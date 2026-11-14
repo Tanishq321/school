@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useToast } from '../contexts/ToastContext.jsx';
 import { Alert, Button, Spinner } from '../components/ui/index.jsx';
-import { AgendaRow, Empty, ScheduleModal, useMeetings } from '../components/classes/index.jsx';
+import { AgendaRow, Empty, ScheduleModal, scheduledMessage, useMeetings } from '../components/classes/index.jsx';
 import { fmtTime } from '../utils/format.js';
 
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -187,10 +187,10 @@ export default function CalendarPage() {
         open={Boolean(schedule)}
         initialStart={schedule}
         onClose={() => setSchedule(null)}
-        onSaved={(m) => {
+        onSaved={(m, series) => {
           setSchedule(null);
           reload();
-          toast(m.invitees?.length ? `Scheduled. Invitation sent to ${m.invitees[0]}.` : 'Scheduled.', { tone: 'success' });
+          toast(scheduledMessage(m, series), { tone: 'success' });
         }}
       />
     </div>

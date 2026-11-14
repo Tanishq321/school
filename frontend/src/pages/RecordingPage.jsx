@@ -78,7 +78,7 @@ export default function RecordingPage() {
     <div className="space-y-10">
       <Back />
 
-      <section className="lamplight relative -mx-5 overflow-hidden px-3 py-6 sm:mx-0 sm:rounded-[30px] sm:p-8 lg:p-10">
+      <section className="lacquer dark relative -mx-5 overflow-hidden px-3 py-6 sm:mx-0 sm:rounded-[30px] sm:p-8 lg:p-10">
         <div className="pointer-events-none absolute inset-0 hidden rounded-[30px] shadow-[inset_0_0_0_1px_rgba(216,190,140,.14)] sm:block" />
         <div className="relative mx-auto aspect-video w-full max-w-[1100px] overflow-hidden rounded-[14px] bg-black shadow-[0_50px_100px_-40px_rgba(0,0,0,1),0_0_0_1px_rgba(216,190,140,.18)]">
           {rec.status === 'ready' && urls ? (

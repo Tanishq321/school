@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * "Lacquer silk": a slow, procedurally generated surface of midnight lacquer whose folds
- * catch a warm brass light. Pure WebGL1, no libraries, no images. Pauses off-screen and in
+ * "Lacquer silk": a slow, procedurally generated surface whose folds catch a warm brass light.
+ * By night it is midnight lacquer under a desk lamp; by day, ivory silk in morning light
+ * (uDay blends between the two, so a theme change dissolves rather than snaps). Pure WebGL1, no libraries, no images. Pauses off-screen and in
  * background tabs; renders a single still frame for prefers-reduced-motion.
  */
 const VERT = `attribute vec2 a; void main(){ gl_Position = vec4(a, 0.0, 1.0); }`;
@@ -13,6 +14,7 @@ uniform vec2 uRes;
 uniform float uTime;
 uniform vec2 uMouse;
 uniform float uIntensity;
+uniform float uDay;
 
 float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float noise(vec2 p){
@@ -51,15 +53,27 @@ void main(){
   float spec = pow(max(dot(n, H), 0.0), 70.0);
   float sheen = pow(max(dot(n, H), 0.0), 9.0);
 
+  vec3 brass = vec3(0.86, 0.71, 0.46);
+
+  // Night: midnight lacquer.
   vec3 deep = vec3(0.027, 0.043, 0.090);
   vec3 lacquer = vec3(0.075, 0.105, 0.185);
-  vec3 brass = vec3(0.86, 0.71, 0.46);
-  vec3 col = mix(deep, lacquer, smoothstep(0.1, 0.95, h)) * (0.45 + 0.7 * diff);
-  col += brass * spec * 0.85 * uIntensity;
-  col += brass * sheen * 0.05 * uIntensity;
-  col += brass * 0.09 * uIntensity * smoothstep(1.3, 0.0, length(p - lp)); // warm pool of light
-  col *= smoothstep(1.45, 0.2, length(p * vec2(0.75, 1.0)));             // vignette
-  col += (hash(gl_FragCoord.xy + fract(t * 7.0) * 113.0) - 0.5) * 0.03;   // film grain
+  vec3 night = mix(deep, lacquer, smoothstep(0.1, 0.95, h)) * (0.45 + 0.7 * diff);
+  night += brass * spec * 0.85 * uIntensity;
+  night += brass * sheen * 0.05 * uIntensity;
+  night += brass * 0.09 * uIntensity * smoothstep(1.3, 0.0, length(p - lp)); // warm pool of light
+  night *= smoothstep(1.45, 0.2, length(p * vec2(0.75, 1.0)));             // vignette
+
+  // Day: ivory silk. Folds read as soft shade, highlights as a white satin sheen, the warmth as brass.
+  vec3 shade = vec3(0.85, 0.80, 0.71);
+  vec3 ivory = vec3(0.965, 0.948, 0.91);
+  vec3 day = mix(shade, ivory, smoothstep(0.05, 0.9, h) * 0.65 + diff * 0.45);
+  day += vec3(1.0, 0.99, 0.96) * spec * 0.35 * uIntensity;
+  day = mix(day, day * brass * 1.08, 0.35 * smoothstep(1.4, 0.0, length(p - lp)) * uIntensity);
+  day *= mix(0.9, 1.0, smoothstep(1.6, 0.3, length(p * vec2(0.75, 1.0))));
+
+  vec3 col = mix(night, day, uDay);
+  col += (hash(gl_FragCoord.xy + fract(t * 7.0) * 113.0) - 0.5) * mix(0.03, 0.018, uDay); // film grain
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -100,6 +114,9 @@ export default function LacquerCanvas({ className = '', intensity = 1, speed = 1
     const uTime = gl.getUniformLocation(prog, 'uTime');
     const uMouse = gl.getUniformLocation(prog, 'uMouse');
     const uIntensity = gl.getUniformLocation(prog, 'uIntensity');
+    const uDay = gl.getUniformLocation(prog, 'uDay');
+    const isDay = () => !canvas.closest('.dark') && !document.documentElement.classList.contains('dark');
+    const day = { v: isDay() ? 1 : 0, t: isDay() ? 1 : 0 };
 
     // Software rasterisers (no GPU) can't afford a live shader: draw one still frame instead.
     const dbg = gl.getExtension('WEBGL_debug_renderer_info');
@@ -133,6 +150,9 @@ export default function LacquerCanvas({ className = '', intensity = 1, speed = 1
       gl.uniform1f(uTime, ((now - start) / 1000) * speed);
       gl.uniform2f(uMouse, mouse.x, mouse.y);
       gl.uniform1f(uIntensity, intensity);
+      day.v += (day.t - day.v) * 0.08;
+      if (Math.abs(day.t - day.v) < 0.002) day.v = day.t;
+      gl.uniform1f(uDay, day.v);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       // Adaptive quality: if frames are expensive, render smaller; if still slow, hold a still frame.
       if (!still) {
@@ -146,7 +166,8 @@ export default function LacquerCanvas({ className = '', intensity = 1, speed = 1
           slow.length = 0;
         }
       }
-      if (!still && visible && !document.hidden) raf = requestAnimationFrame(frame);
+      const fading = day.v !== day.t;
+      if ((!still || fading) && visible && !document.hidden) raf = requestAnimationFrame(frame);
     };
     const kick = () => {
       if (!raf) raf = requestAnimationFrame(frame);
@@ -162,6 +183,11 @@ export default function LacquerCanvas({ className = '', intensity = 1, speed = 1
     });
     io.observe(canvas);
     const onVis = () => !document.hidden && kick();
+    const onTheme = () => {
+      day.t = isDay() ? 1 : 0;
+      kick();
+    };
+    window.addEventListener('themechange', onTheme);
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('pointermove', onMove, { passive: true });
     window.addEventListener('resize', kick);
@@ -173,6 +199,7 @@ export default function LacquerCanvas({ className = '', intensity = 1, speed = 1
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('resize', kick);
+      window.removeEventListener('themechange', onTheme);
       gl.getExtension('WEBGL_lose_context')?.loseContext();
     };
   }, [intensity, speed]);

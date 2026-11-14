@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { Check, Copy, Download, KeyRound, Laptop, LogOut, ShieldCheck, Smartphone } from 'lucide-react';
+import { Check, Copy, Download, KeyRound, Laptop, LogOut, Monitor, Moon, ShieldCheck, Smartphone, Sun } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useToast } from '../contexts/ToastContext.jsx';
 import { api, sessionBody, setSession } from '../services/api.js';
@@ -14,6 +15,11 @@ const Eyebrow = ({ children }) => <p className="text-[11px] font-medium tracking
 
 export default function ProfilePage() {
   const { user } = useAuth();
+  // Links such as /profile#two-step land on that section.
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (id) requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ block: 'start' }));
+  }, []);
   return (
     <div className="space-y-14">
       <header>
@@ -29,6 +35,7 @@ export default function ProfilePage() {
         </div>
         <div className="min-w-0 space-y-14">
           <Details />
+          <Appearance />
           <WaveBand />
           <TwoStep />
           <Password />
@@ -39,9 +46,9 @@ export default function ProfilePage() {
   );
 }
 
-function Section({ eyebrow, title, children, aside }) {
+function Section({ eyebrow, title, children, aside, id }) {
   return (
-    <section>
+    <section id={id} className="scroll-mt-10">
       <div className="mb-5 flex items-end justify-between gap-4">
         <div>
           <Eyebrow>{eyebrow}</Eyebrow>
@@ -97,6 +104,49 @@ function Details() {
           </Button>
         </div>
       </form>
+    </Section>
+  );
+}
+
+/** Follow the device (light by day, dark at night, if the device switches), or fix one. */
+function Appearance() {
+  const { preference, theme, setPreference } = useTheme();
+  const options = [
+    { id: 'system', label: 'Follow device', icon: Monitor },
+    { id: 'light', label: 'Light', icon: Sun },
+    { id: 'dark', label: 'Dark', icon: Moon },
+  ];
+  return (
+    <Section eyebrow="Appearance" title="Light and dark">
+      <div className="grid grid-cols-3 gap-3" role="radiogroup" aria-label="Appearance" data-testid="appearance">
+        {options.map((o) => {
+          const Icon = o.icon;
+          const on = preference === o.id;
+          return (
+            <button
+              key={o.id}
+              role="radio"
+              aria-checked={on}
+              onClick={() => setPreference(o.id)}
+              className={`group flex flex-col items-start gap-3 rounded-[16px] border p-4 text-left transition ${
+                on ? 'border-brand-400/70 bg-brand-400/[0.08] shadow-[inset_0_0_0_1px_rgba(198,162,106,.35)]' : 'border-line/80 hover:border-brand-400/40 dark:border-night-line'
+              }`}
+            >
+              {/* a tiny swatch of each theme's material */}
+              <span className="flex h-12 w-full overflow-hidden rounded-[10px] border border-line/60 dark:border-night-line">
+                {o.id !== 'dark' && <span className="flex-1 bg-[radial-gradient(90%_90%_at_20%_0%,#fff,#ece5d6)]" />}
+                {o.id !== 'light' && <span className="flex-1 bg-[radial-gradient(90%_90%_at_20%_0%,#2a2f3f,#0f1628)]" />}
+              </span>
+              <span className="flex items-center gap-2 text-sm font-medium">
+                <Icon size={15} strokeWidth={1.5} className={on ? 'text-brand-600 dark:text-brand-300' : 'text-ink-2 dark:text-slate-400'} /> {o.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-xs text-ink-2 dark:text-slate-400">
+        {preference === 'system' ? `Following your device: ${theme} right now. It changes when your device does.` : `Always ${preference}, whatever your device says.`} Classes and the screening room stay dark, like a cinema.
+      </p>
     </Section>
   );
 }
@@ -209,7 +259,7 @@ function TwoStep() {
     });
   };
   return (
-    <Section eyebrow="Security" title="Two-step sign-in">
+    <Section id="two-step" eyebrow="Security" title="Two-step sign-in">
       <div className="plate flex flex-wrap items-center gap-5 p-5">
         <span className={`flex size-12 shrink-0 items-center justify-center rounded-full border ${on ? 'border-brand-400/60 text-brand-500 dark:text-brand-300' : 'border-line text-ink-2 dark:border-night-line dark:text-slate-400'}`}>
           <ShieldCheck size={22} strokeWidth={1.4} />

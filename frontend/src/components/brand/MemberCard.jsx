@@ -34,7 +34,7 @@ export default function MemberCard({ user, className = '' }) {
         ref={ref}
         onPointerMove={move}
         onPointerLeave={rest}
-        className="member-card relative aspect-[1.586] w-full overflow-hidden rounded-[20px] text-vellum select-none"
+        className="member-card dark relative aspect-[1.586] w-full overflow-hidden rounded-[20px] text-vellum select-none"
         data-testid="member-card"
       >
         <Rosette size={520} dense className="pointer-events-none absolute -top-[42%] -right-[28%] opacity-[0.34]" />

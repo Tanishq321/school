@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, CalendarPlus, Check, Copy, Download, Mail, PencilLine, UserCheck, UserRound } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CalendarPlus, Check, Copy, Download, Mail, PencilLine, Repeat, Trash2, UserCheck, UserRound } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext.jsx';
 import { api } from '../services/api.js';
 import { Alert, Button, FullPageSpinner } from '../components/ui/index.jsx';
-import { downloadAttendance, downloadAuthed, RecordingCard, ScheduleModal, SectionTitle, StatusBadge } from '../components/classes/index.jsx';
+import { CancelClassModal, downloadAttendance, downloadAuthed, RecordingCard, ScheduleModal, SectionTitle, StatusBadge } from '../components/classes/index.jsx';
+import { LessonEditor, LessonView } from '../components/classes/Lesson.jsx';
 import { copyText, fmtDateTime, fmtDuration, fmtTime } from '../utils/format.js';
 
 export default function ClassDetailPage() {
@@ -13,6 +14,7 @@ export default function ClassDetailPage() {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [editing, setEditing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const load = useCallback(() => {
     api(`/meetings/${code}/summary`)
       .then(setData)
@@ -68,18 +70,30 @@ export default function ClassDetailPage() {
                 <Copy size={16} strokeWidth={1.5} /> Invitation link
               </Button>
               {m.status === 'scheduled' && (
-                <Button size="lg" variant="ghost" onClick={() => setEditing(true)}>
-                  <PencilLine size={16} strokeWidth={1.5} /> Edit
-                </Button>
+                <>
+                  <Button size="lg" variant="ghost" onClick={() => setEditing(true)}>
+                    <PencilLine size={16} strokeWidth={1.5} /> Edit
+                  </Button>
+                  <Button size="lg" variant="ghost" onClick={() => setCancelling(true)}>
+                    <Trash2 size={16} strokeWidth={1.5} /> Cancel
+                  </Button>
+                </>
               )}
             </>
           )}
         </div>
+        {data.series && <SeriesStrip series={data.series} current={m.code} />}
       </header>
 
       <div className={`grid gap-14 ${isHost ? 'lg:grid-cols-[1fr_340px]' : ''}`}>
         <div className="min-w-0 space-y-14">
-          <section>
+          {isHost ? (
+            <LessonEditor key={m.code} code={m.code} lesson={data.lesson} studentEmail={m.invitees?.[0]} studentName={data.guests?.[0]?.name} />
+          ) : (
+            <LessonView code={m.code} lesson={data.lesson} hostName={m.hostName} />
+          )}
+
+          <section className="reveal">
             <SectionTitle eyebrow="Archive" title="Recordings" />
             {data.recordings.length === 0 ? (
               <p className="text-ink-2 dark:text-slate-400">{isHost ? 'This class was not recorded.' : 'No recording has been shared for this class.'}</p>
@@ -93,7 +107,7 @@ export default function ClassDetailPage() {
           </section>
 
           {isHost && data.attendance && (
-            <section>
+            <section className="reveal">
               <SectionTitle
                 eyebrow="Register"
                 title="Attendance"
@@ -137,7 +151,7 @@ export default function ClassDetailPage() {
           )}
 
           {isHost && data.transcript && (
-            <section>
+            <section className="reveal">
               <SectionTitle
                 eyebrow="Correspondence"
                 title="Chat transcript"
@@ -170,7 +184,7 @@ export default function ClassDetailPage() {
         {isHost && (
           <aside className="space-y-10">
             <Notes code={m.code} initial={data.notes} />
-            <section>
+            <section className="reveal">
               <h3 className="mb-4 text-[11px] font-medium tracking-[0.24em] text-brand-600 uppercase dark:text-brand-300/80">Student</h3>
               {data.guests?.length ? (
                 <ul className="space-y-2.5">
@@ -197,6 +211,7 @@ export default function ClassDetailPage() {
         )}
       </div>
 
+      {isHost && <CancelClassModal meeting={m} open={cancelling} onClose={() => setCancelling(false)} onDone={load} />}
       {isHost && (
         <ScheduleModal
           open={editing}
@@ -210,6 +225,43 @@ export default function ClassDetailPage() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+/** Every lesson of a weekly series, as a row of dated stops; the current one is marked. */
+function SeriesStrip({ series, current }) {
+  const total = series.lessons.length;
+  const index = series.lessons.findIndex((l) => l.code === current);
+  return (
+    <div className="mt-10" data-testid="series">
+      <p className="mb-3 flex items-center gap-2 text-[11px] font-medium tracking-[0.24em] text-brand-600 uppercase dark:text-brand-300/80">
+        <Repeat size={13} strokeWidth={1.6} /> Weekly series · lesson {index + 1} of {total}
+      </p>
+      <ol className="flex gap-1.5 overflow-x-auto pb-2">
+        {series.lessons.map((l) => {
+          const d = new Date(l.scheduledStart);
+          const here = l.code === current;
+          const gone = l.status === 'cancelled';
+          const past = ['ended', 'expired'].includes(l.status);
+          return (
+            <li key={l.code}>
+              <Link
+                to={`/classes/${l.code}`}
+                viewTransition
+                aria-current={here ? 'page' : undefined}
+                className={`flex w-[4.4rem] flex-col items-center rounded-2xl border px-2 py-2.5 text-center transition ${
+                  here ? 'border-brand-400/70 bg-brand-400/10' : 'border-line/70 hover:border-brand-400/50 dark:border-night-line'
+                } ${gone ? 'opacity-45' : ''}`}
+              >
+                <span className="text-[10px] tracking-[0.16em] text-ink-2 uppercase dark:text-slate-400">{d.toLocaleDateString(undefined, { month: 'short' })}</span>
+                <span className={`font-display text-[1.45rem] leading-tight tabular-nums ${gone ? 'line-through' : ''}`}>{d.getDate()}</span>
+                <span className={`mt-1 size-1.5 rounded-full ${past ? 'bg-brand-500' : gone ? 'bg-transparent' : 'border border-brand-400/70'}`} />
+              </Link>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }

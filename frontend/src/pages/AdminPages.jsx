@@ -111,51 +111,50 @@ export function AdminOverview() {
         <Skeleton rows={5} />
       ) : (
         <>
-          <section className="lamplight relative overflow-hidden rounded-[28px] p-8 text-vellum sm:p-10" data-testid="admin-live">
+          <section className="lamplight elevated relative overflow-hidden rounded-[28px] p-8 text-hi sm:p-10" data-testid="admin-live">
             <Rosette size={440} dense className="pointer-events-none absolute -top-56 -right-36 opacity-[0.22]" />
-            <div className="pointer-events-none absolute inset-0 rounded-[28px] shadow-[inset_0_0_0_1px_rgba(216,190,140,.14)]" />
             <div className="relative flex flex-wrap items-end gap-x-14 gap-y-6">
               <div>
-                <p className="flex items-center gap-2 text-[11px] font-medium tracking-[0.28em] text-brand-300/90 uppercase">
-                  <Radio size={13} className={data.live.length ? 'animate-pulse text-[#f0a49c]' : ''} /> In session now
+                <p className="flex items-center gap-2 text-[11px] font-medium tracking-[0.28em] text-brass uppercase">
+                  <Radio size={13} className={data.live.length ? 'animate-pulse text-danger dark:text-[#f0a49c]' : ''} /> In session now
                 </p>
                 <p className="mt-3 font-display text-[4.6rem] leading-none tabular-nums">{data.live.length}</p>
               </div>
-              <div className="flex gap-10 pb-2 text-sm text-vellum/60">
+              <div className="flex gap-10 pb-2 text-sm text-hi/60">
                 <span>
-                  <b className="block font-display text-2xl font-normal text-vellum tabular-nums">{s.participants}</b> people in rooms
+                  <b className="block font-display text-2xl font-normal text-hi tabular-nums">{s.participants}</b> people in rooms
                 </span>
                 <span>
-                  <b className="block font-display text-2xl font-normal text-vellum tabular-nums">{data.classes.upcoming}</b> scheduled ahead
+                  <b className="block font-display text-2xl font-normal text-hi tabular-nums">{data.classes.upcoming}</b> scheduled ahead
                 </span>
                 <span>
-                  <b className="block font-display text-2xl font-normal text-vellum tabular-nums">{s.recordingNow}</b> recording
+                  <b className="block font-display text-2xl font-normal text-hi tabular-nums">{s.recordingNow}</b> recording
                 </span>
               </div>
             </div>
             {data.live.length > 0 && (
-              <ul className="relative mt-8 divide-y divide-white/[0.07] border-t border-white/[0.07]">
+              <ul className="relative mt-8 divide-y divide-hi/10 border-t border-hi/10">
                 {data.live.map((c) => (
                   <li key={c.id} className="flex flex-wrap items-center gap-x-6 gap-y-1 py-3.5 text-sm">
                     <span className="min-w-[10rem] flex-1 font-medium">{c.teacher || 'Teacher not in the room'}</span>
-                    <span className="text-vellum/60">{c.people === 2 ? 'with their student' : 'waiting for the student'}</span>
+                    <span className="text-hi/60">{c.people === 2 ? 'with their student' : 'waiting for the student'}</span>
                     {c.recording && (
                       <span className="inline-flex items-center gap-1.5 text-[#f3b1aa]">
                         <CircleDot size={13} /> recording
                       </span>
                     )}
-                    <span className="text-vellum/60 tabular-nums">{fmtDuration((Date.now() - new Date(c.since)) / 1000)}</span>
+                    <span className="text-hi/60 tabular-nums">{fmtDuration((Date.now() - new Date(c.since)) / 1000)}</span>
                     <EndClass id={c.id} onDone={reload} dark />
                   </li>
                 ))}
               </ul>
             )}
-            <p className="relative mt-6 flex items-center gap-2 text-xs text-vellum/45">
+            <p className="relative mt-6 flex items-center gap-2 text-xs text-hi/45">
               <EyeOff size={13} strokeWidth={1.5} /> Administrators see that a class is in session, never what is said, written or recorded in it.
             </p>
           </section>
 
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <section className="reveal-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Figure label="Teachers" value={data.people.teachers} />
             <Figure label="Students" value={data.people.students} note={data.people.suspended ? `${data.people.suspended} suspended account${data.people.suspended > 1 ? 's' : ''}` : undefined} />
             <Figure label="Classes held" value={data.classes.held} note={`${data.classes.hoursTaught7d} hours taught this week`} />
@@ -166,7 +165,7 @@ export function AdminOverview() {
             />
           </section>
 
-          <section className="grid gap-10 lg:grid-cols-2">
+          <section className="reveal grid gap-10 lg:grid-cols-2">
             <div className="plate p-6">
               <Bars data={data.series.classes} label="Classes held, last 14 days" />
             </div>
@@ -175,7 +174,7 @@ export function AdminOverview() {
             </div>
           </section>
 
-          <section className="grid gap-10 lg:grid-cols-[1fr_1fr]">
+          <section className="reveal grid gap-10 lg:grid-cols-[1fr_1fr]">
             <div>
               <Eyebrow>Machinery</Eyebrow>
               <h2 className="mt-1.5 mb-5 font-display text-[1.9rem] leading-none font-normal">System</h2>
@@ -228,7 +227,7 @@ function EndClass({ id, onDone, dark }) {
     }
   };
   return (
-    <button onClick={end} className={`rounded-full border px-3 py-1 text-xs transition hover:border-danger hover:text-[#f3b1aa] ${dark ? 'border-white/15 text-vellum/70' : 'border-line text-ink-2 dark:border-night-line dark:text-slate-300'}`}>
+    <button onClick={end} className={`rounded-full border px-3 py-1 text-xs transition hover:border-danger hover:text-[#f3b1aa] ${dark ? 'border-hi/15 text-hi/70' : 'border-line text-ink-2 dark:border-night-line dark:text-slate-300'}`}>
       End class
     </button>
   );

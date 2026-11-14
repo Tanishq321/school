@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CircleDot, MessageSquareText, Mic, MonitorUp, PenTool, PhoneOff, Users, Video } from 'lucide-react';
+import { ArrowDown, CircleDot, MessageSquareText, Mic, MonitorUp, PenTool, PhoneOff, Users, Video } from 'lucide-react';
 import LacquerCanvas from '../components/brand/LacquerCanvas.jsx';
+import Armillary from '../components/brand/Armillary.jsx';
 import { Avatar, Logo, Monogram } from '../components/ui/index.jsx';
 import MemberCard from '../components/brand/MemberCard.jsx';
 import { Rosette, WaveBand } from '../components/brand/Guilloche.jsx';
+import { ThemeButton } from '../components/AppShell.jsx';
+
+const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** 0 → 1 as the element travels from entering the viewport to its centre. */
 function useScrollProgress(ref) {
@@ -34,6 +38,41 @@ function useScrollProgress(ref) {
   return p;
 }
 
+const CHAPTERS = [
+  {
+    n: 'I',
+    title: 'A room for two.',
+    body: 'Every lesson is one-to-one. The seat opposite the teacher holds exactly one student, and the server refuses anyone else.',
+    side: 'right',
+  },
+  {
+    n: 'II',
+    title: 'Yours, entirely.',
+    body: 'Classes run on infrastructure you own, from the media server to the relay. No outside video company sits between a teacher and a student.',
+    side: 'left',
+  },
+  {
+    n: 'III',
+    title: 'Kept only with consent.',
+    body: 'A lesson is recorded only when the student agrees, and the film stays private to the teacher until they choose to share it.',
+    side: 'right',
+  },
+  {
+    n: 'IV',
+    title: 'Made for long sessions.',
+    body: 'Each picture is sent at the size it is shown. Connections mend themselves. Sound cues are quiet. Nothing to install.',
+    side: 'left',
+  },
+];
+// Where each layer is fully visible, as fractions of the story's scroll.
+const WINDOWS = [
+  [0.19, 0.29],
+  [0.41, 0.51],
+  [0.63, 0.73],
+  [0.85, 0.97],
+];
+const FADE = 0.045;
+
 const SPEC = [
   ['Class size', 'One teacher, one student. Always. A private tutorial, never a crowd.'],
   ['Infrastructure', 'Your servers. Audio and video travel through your own media server and relay, never a third-party video service.'],
@@ -45,6 +84,200 @@ const SPEC = [
   ['Records', 'Attendance, transcripts, private notes and a film of each lesson, kept on your servers.'],
 ];
 
+/**
+ * The scroll story. A tall section whose stage stays pinned to the viewport while you scroll
+ * through it: the instrument turns and the camera travels, and four chapters cross-fade in turn.
+ * Text layers are moved imperatively (no React re-render per frame); the 3D scene reads the same
+ * progress value. With reduced motion the story becomes an ordinary, static page.
+ */
+function Story() {
+  const sectionRef = useRef(null);
+  const heroRef = useRef(null);
+  const cueRef = useRef(null);
+  const chapterRefs = useRef([]);
+  const railRefs = useRef([]);
+  const progress = useRef(0);
+  const [still] = useState(reducedMotion);
+
+  useEffect(() => {
+    if (still) return undefined;
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const el = sectionRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const span = Math.max(1, r.height - window.innerHeight);
+      const p = Math.min(1, Math.max(0, -r.top / span));
+      progress.current = p;
+      // Hero: leaves as the story begins.
+      const h = Math.min(1, p / 0.11);
+      if (heroRef.current) {
+        heroRef.current.style.opacity = String(1 - h);
+        heroRef.current.style.transform = `translateY(${-h * 60}px)`;
+        heroRef.current.style.pointerEvents = h > 0.5 ? 'none' : '';
+      }
+      if (cueRef.current) cueRef.current.style.opacity = String(Math.max(0, 1 - p / 0.04));
+      CHAPTERS.forEach((_, i) => {
+        const [a, b] = WINDOWS[i];
+        const inn = Math.min(1, Math.max(0, (p - (a - FADE)) / FADE));
+        const out = i === CHAPTERS.length - 1 ? 1 : Math.min(1, Math.max(0, ((b + FADE) - p) / FADE));
+        const v = Math.min(inn, out);
+        const node = chapterRefs.current[i];
+        if (node) {
+          node.style.opacity = String(v);
+          node.style.transform = `translateY(${(1 - v) * (p < a ? 40 : -40)}px)`;
+          node.style.visibility = v < 0.01 ? 'hidden' : 'visible';
+        }
+        railRefs.current[i]?.setAttribute('data-active', p >= a - FADE && p <= b + FADE ? 'true' : 'false');
+      });
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, [still]);
+
+  const getProgress = useCallback(() => progress.current, []);
+  const goTo = (i) => {
+    const el = sectionRef.current;
+    const span = el.offsetHeight - window.innerHeight;
+    const [a, b] = WINDOWS[i];
+    window.scrollTo({ top: el.offsetTop + span * ((a + b) / 2), behavior: 'smooth' });
+  };
+
+  const header = (
+    <header className="relative z-20 mx-auto flex w-full max-w-7xl items-center px-6 py-6 sm:px-10">
+      <Logo />
+      <nav className="ml-auto flex items-center gap-1 text-sm sm:gap-2">
+        <ThemeButton className="!text-hi/70 hover:!bg-hi/5 hover:!text-hi" />
+        <Link viewTransition to="/login" className="rounded-full px-4 py-2 whitespace-nowrap text-hi/80 transition hover:text-hi">
+          Sign in
+        </Link>
+        <Link viewTransition to="/register" data-sheen className="sheen hidden rounded-full border border-brass/40 px-5 py-2 whitespace-nowrap text-hi transition hover:border-brass sm:inline-flex">
+          Create an account
+        </Link>
+      </nav>
+    </header>
+  );
+
+  const hero = (
+    <>
+      <div className="hairline mb-6 w-48 sm:mb-10" />
+      <h1 className="animate-reveal font-display text-[clamp(2.9rem,8.6vw,8.4rem)] leading-[0.92] font-normal tracking-[-0.025em]">
+        The private
+        <br />
+        room.
+      </h1>
+      <p className="mt-6 max-w-lg text-[clamp(1rem,1.4vw,1.22rem)] leading-relaxed text-hi/70 sm:mt-9">
+        Private one-to-one tutoring for families and institutions that expect discretion, clarity and calm. One teacher, one student, on servers you control.
+      </p>
+      <div className="mt-7 flex flex-wrap items-center gap-4 sm:mt-10">
+        <Link
+          to="/register"
+          data-sheen
+          className="sheen inline-flex h-13 items-center rounded-full bg-[linear-gradient(180deg,#a8864f_0%,#86663a_100%)] px-8 text-[15px] font-medium text-vellum shadow-[inset_0_1px_0_rgba(255,240,210,.35),0_14px_30px_-14px_rgba(110,83,44,.9)] transition hover:brightness-110"
+        >
+          Open your first room
+        </Link>
+        <Link viewTransition to="/login" className="text-[15px] text-hi/70 underline decoration-hi/25 underline-offset-[6px] transition hover:text-hi hover:decoration-brass">
+          I already have an account
+        </Link>
+      </div>
+    </>
+  );
+
+  if (still) {
+    // Reduced motion: no pinning, no travel. The same content, laid out plainly.
+    return (
+      <section className="relative overflow-hidden">
+        <LacquerCanvas />
+        {header}
+        <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-10 px-6 pt-10 pb-24 sm:px-10 lg:grid-cols-[1.1fr_1fr]">
+          <div>{hero}</div>
+          <Armillary className="aspect-square w-full" idle />
+        </div>
+        <div className="relative z-10 mx-auto grid max-w-7xl gap-x-16 gap-y-14 px-6 pb-24 sm:px-10 lg:grid-cols-2">
+          {CHAPTERS.map((c) => (
+            <ChapterText key={c.n} c={c} />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section ref={sectionRef} className="relative h-[520vh] max-sm:h-[440vh]" data-testid="story">
+      <div className="sticky top-0 h-[100svh] overflow-hidden">
+        <LacquerCanvas />
+        <Armillary className="!absolute inset-0" getProgress={getProgress} label="A brass armillary sphere, the emblem of scholarship, turning as you scroll" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-ground/80 to-transparent sm:hidden" />
+        <div className="relative flex h-full flex-col">
+          {header}
+          <div ref={heroRef} className="relative z-10 mx-auto mt-auto w-full max-w-7xl px-6 pb-[5vh] will-change-transform sm:px-10 sm:pb-[13vh]">
+            <div className="max-w-2xl">{hero}</div>
+          </div>
+        </div>
+
+        {CHAPTERS.map((c, i) => (
+          <div
+            key={c.n}
+            ref={(el) => (chapterRefs.current[i] = el)}
+            className={`invisible absolute inset-x-0 bottom-[10vh] z-10 mx-auto flex max-w-7xl px-6 opacity-0 will-change-transform sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2 sm:px-10 ${c.side === 'right' ? 'sm:justify-end' : 'sm:justify-start'}`}
+          >
+            <div className="relative max-w-md">
+              {/* a soft veil of the page colour keeps the words legible over the brass */}
+              <div className="pointer-events-none absolute -inset-x-16 -inset-y-14 -z-10 bg-[radial-gradient(closest-side,var(--ground)_35%,transparent)] opacity-80" />
+              <ChapterText c={c} />
+            </div>
+          </div>
+        ))}
+
+        <nav className="absolute top-1/2 right-5 z-20 hidden -translate-y-1/2 flex-col gap-4 lg:flex" aria-label="Chapters">
+          {CHAPTERS.map((c, i) => (
+            <button
+              key={c.n}
+              ref={(el) => (railRefs.current[i] = el)}
+              data-active="false"
+              onClick={() => goTo(i)}
+              className="group flex items-center justify-end gap-3 font-display text-sm text-hi/35 transition data-[active=true]:text-brass"
+              aria-label={`Chapter ${c.n}: ${c.title}`}
+            >
+              <span className="pointer-events-none rounded-full bg-ground/85 px-3 py-1 opacity-0 backdrop-blur transition group-hover:opacity-100">{c.title.replace(/\.$/, '')}</span>
+              <span className="w-6 text-right italic">{c.n}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div ref={cueRef} className="absolute bottom-7 left-1/2 z-10 hidden -translate-x-1/2 flex-col items-center gap-2 text-[11px] tracking-[0.3em] text-hi/45 uppercase sm:flex">
+          Scroll
+          <span className="relative h-10 w-px overflow-hidden bg-hi/15">
+            <span className="absolute inset-x-0 top-0 h-1/2 animate-[cue_2.2s_ease-in-out_infinite] bg-brass" />
+          </span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ChapterText({ c }) {
+  return (
+    <article>
+      <p className="font-display text-[1.6rem] text-brass italic">{c.n}</p>
+      <div className="hairline mt-4 mb-7 w-24" />
+      <h2 className="font-display text-[clamp(2.3rem,4.2vw,3.6rem)] leading-[1.02] font-normal">{c.title}</h2>
+      <p className="mt-5 text-[17px] leading-[1.75] text-hi/70">{c.body}</p>
+    </article>
+  );
+}
+
 export default function LandingPage() {
   const stageRef = useRef(null);
   const progress = useScrollProgress(stageRef);
@@ -55,49 +288,17 @@ export default function LandingPage() {
   }, [progress]);
 
   return (
-    <div className="dark bg-night text-vellum">
-      {/* ---------------------------------------------------------------- hero */}
-      <section className="relative flex min-h-[100svh] flex-col overflow-hidden">
-        <LacquerCanvas />
-        <header className="relative z-10 mx-auto flex w-full max-w-7xl items-center px-6 py-6 sm:px-10">
-          <Logo />
-          <nav className="ml-auto flex items-center gap-2 text-sm">
-            <Link viewTransition to="/login" className="rounded-full px-4 py-2 whitespace-nowrap text-vellum/80 transition hover:text-vellum">
-              Sign in
-            </Link>
-            <Link viewTransition to="/register" data-sheen className="sheen hidden rounded-full border border-brand-300/40 px-5 py-2 whitespace-nowrap text-vellum transition hover:border-brand-300 sm:inline-flex">
-              Create an account
-            </Link>
-          </nav>
-        </header>
+    <div className="bg-ground text-hi">
+      <div className="scroll-progress fixed inset-x-0 top-0 z-50 h-[2px] bg-[linear-gradient(90deg,#8d6c3b,#d8be8c)]" aria-hidden="true" />
 
-        <div className="relative z-10 mx-auto mt-auto w-full max-w-7xl px-6 pb-[12vh] sm:px-10">
-          <div className="hairline mb-10 w-48" />
-          <h1 className="animate-reveal font-display text-[clamp(3.6rem,9.5vw,9rem)] leading-[0.92] font-normal tracking-[-0.025em]">
-            The private
-            <br />
-            room.
-          </h1>
-          <p className="mt-10 max-w-xl text-[clamp(1.05rem,1.4vw,1.25rem)] leading-relaxed text-vellum/70">
-            Private one-to-one tutoring for families and institutions that expect discretion, clarity and calm. One teacher, one student, on servers you control.
-          </p>
-          <div className="mt-10 flex flex-wrap items-center gap-4">
-            <Link
-              to="/register"
-              data-sheen
-              className="sheen inline-flex h-13 items-center rounded-full bg-[linear-gradient(180deg,#a8864f_0%,#86663a_100%)] px-8 text-[15px] font-medium text-vellum shadow-[inset_0_1px_0_rgba(255,240,210,.35),0_14px_30px_-14px_rgba(110,83,44,.9)] transition hover:brightness-110"
-            >
-              Open your first room
-            </Link>
-            <Link viewTransition to="/login" className="text-[15px] text-vellum/70 underline decoration-vellum/25 underline-offset-[6px] transition hover:text-vellum hover:decoration-brand-300">
-              I already have an account
-            </Link>
-          </div>
-        </div>
-      </section>
+      <Story />
 
       {/* ---------------------------------------------------------------- the product as the centrepiece */}
-      <section className="relative px-4 pt-10 pb-28 sm:px-10" style={{ perspective: '1600px' }}>
+      <section className="relative px-4 pt-28 pb-28 sm:px-10" style={{ perspective: '1600px' }}>
+        <div className="reveal mx-auto mb-16 max-w-3xl text-center">
+          <p className="text-[11px] font-medium tracking-[0.3em] text-brass uppercase">The room</p>
+          <h2 className="mt-5 font-display text-[clamp(2.4rem,4.5vw,3.6rem)] leading-[1.04] font-normal">The board in the centre, the two of you, nothing in the way.</h2>
+        </div>
         <div
           ref={stageRef}
           className="mx-auto max-w-6xl will-change-transform"
@@ -109,41 +310,34 @@ export default function LandingPage() {
         >
           <ProductStage drawn={drawn} />
         </div>
-        <p className="mx-auto mt-10 max-w-md text-center text-sm text-vellum/50">The lesson as your student sees it: the board in the centre, the two of you, nothing in the way.</p>
-      </section>
-
-      {/* ---------------------------------------------------------------- editorial */}
-      <section className="mx-auto grid max-w-7xl gap-x-16 gap-y-20 px-6 py-24 sm:px-10 lg:grid-cols-2">
-        <Chapter title="A room for two." body="Every lesson is one-to-one. The seat opposite the teacher holds exactly one student, and the server refuses anyone else: no crowding, no strangers, no distractions." />
-        <Chapter title="Yours, entirely." body="Classes run on infrastructure you own, from the media server to the relay. No outside video company sits between a teacher and a student, and the sessions answer only to you." />
-        <Chapter title="Made for long sessions." body="Each picture is sent at the size it is shown. Connections mend themselves after a dropped network. Sound cues are quiet. Shortcuts keep hands on the material, not the interface." />
-        <Chapter title="Nothing to install." body="It opens in the browser on a laptop, tablet or phone. Your student follows the invitation, and is let straight in." />
       </section>
 
       {/* ---------------------------------------------------------------- membership & security */}
-      <section className="relative overflow-hidden border-y border-brand-300/10">
-        <Rosette size={1100} dense className="pointer-events-none absolute top-1/2 -left-[420px] -translate-y-1/2 opacity-[0.16]" />
+      <section className="relative overflow-hidden border-y border-brass/15">
+        <div className="drift pointer-events-none absolute top-1/2 -left-[420px] -translate-y-1/2" style={{ '--drift-from': '120px', '--drift-to': '-120px' }}>
+          <Rosette size={1100} dense className="opacity-[0.16]" />
+        </div>
         <div className="relative mx-auto grid max-w-7xl items-center gap-16 px-6 py-28 sm:px-10 lg:grid-cols-[1fr_1.05fr]">
-          <div className="mx-auto w-full max-w-[460px]">
+          <div className="reveal mx-auto w-full max-w-[460px]">
             <MemberCard user={{ id: '00000000a41c7e92', name: 'Eleanor Whitcombe', role: 'teacher', createdAt: '2026-01-01', twoFactor: { enabled: true } }} />
           </div>
           <div>
-            <p className="text-[11px] font-medium tracking-[0.3em] text-brand-300/90 uppercase">Membership</p>
-            <h2 className="mt-5 font-display text-[clamp(2.4rem,4.5vw,3.6rem)] leading-[1.04] font-normal">
+            <p className="reveal text-[11px] font-medium tracking-[0.3em] text-brass uppercase">Membership</p>
+            <h2 className="reveal mt-5 font-display text-[clamp(2.4rem,4.5vw,3.6rem)] leading-[1.04] font-normal">
               Guarded like a <span className="foil italic">private bank.</span>
             </h2>
-            <WaveBand className="my-8 max-w-sm" />
-            <dl className="space-y-6 text-[17px] leading-relaxed text-vellum/75">
+            <WaveBand className="rule-draw my-8 max-w-sm" />
+            <dl className="reveal-stagger space-y-6 text-[17px] leading-relaxed text-hi/75">
               <div>
-                <dt className="font-display text-xl text-vellum">Two-step sign-in</dt>
+                <dt className="font-display text-xl text-hi">Two-step sign-in</dt>
                 <dd className="mt-1">A password alone opens nothing. Each sign-in is confirmed with a code from the member’s own phone.</dd>
               </div>
               <div>
-                <dt className="font-display text-xl text-vellum">Every device, accounted for</dt>
+                <dt className="font-display text-xl text-hi">Every device, accounted for</dt>
                 <dd className="mt-1">Members see where they are signed in and close any of them with one touch. Repeated wrong passwords lock the door.</dd>
               </div>
               <div>
-                <dt className="font-display text-xl text-vellum">Stewardship without intrusion</dt>
+                <dt className="font-display text-xl text-hi">Stewardship without intrusion</dt>
                 <dd className="mt-1">Your administrators manage accounts and watch the system’s health. What is said in a lesson stays between teacher and student.</dd>
               </div>
             </dl>
@@ -152,13 +346,14 @@ export default function LandingPage() {
       </section>
 
       {/* ---------------------------------------------------------------- specification */}
-      <section className="mx-auto max-w-5xl px-6 py-24 sm:px-10">
-        <h2 className="font-display text-[clamp(2.4rem,4.5vw,3.6rem)] leading-tight font-normal">Specification</h2>
-        <dl className="mt-12 border-t border-brand-300/25">
+      <section className="mx-auto max-w-5xl px-6 py-28 sm:px-10">
+        <h2 className="reveal font-display text-[clamp(2.4rem,4.5vw,3.6rem)] leading-tight font-normal">Specification</h2>
+        <div className="rule-draw mt-12 h-px bg-brass/30" />
+        <dl>
           {SPEC.map(([k, v]) => (
-            <div key={k} className="grid gap-2 border-b border-brand-300/15 py-7 sm:grid-cols-[14rem_1fr] sm:gap-10">
-              <dt className="font-display text-xl text-brand-300">{k}</dt>
-              <dd className="text-[17px] leading-relaxed text-vellum/75">{v}</dd>
+            <div key={k} className="reveal grid gap-2 border-b border-brass/15 py-7 sm:grid-cols-[14rem_1fr] sm:gap-10">
+              <dt className="font-display text-xl text-brass">{k}</dt>
+              <dd className="text-[17px] leading-relaxed text-hi/75">{v}</dd>
             </div>
           ))}
         </dl>
@@ -167,45 +362,35 @@ export default function LandingPage() {
       {/* ---------------------------------------------------------------- close */}
       <section className="relative overflow-hidden">
         <LacquerCanvas intensity={0.8} speed={0.6} />
-        <div className="relative mx-auto flex max-w-4xl flex-col items-center px-6 py-36 text-center">
+        <div className="reveal relative mx-auto flex max-w-4xl flex-col items-center px-6 py-36 text-center">
           <Monogram size={64} />
           <p className="mt-10 font-display text-[clamp(2.8rem,6vw,5rem)] leading-[1.02] font-normal">Open your first room.</p>
-          <p className="mt-6 max-w-md text-vellum/65">An account takes a minute. Your first class can begin straight away.</p>
+          <p className="mt-6 max-w-md text-hi/65">An account takes a minute. Your first class can begin straight away.</p>
           <Link
             to="/register"
             data-sheen
-            className="sheen mt-10 inline-flex h-13 items-center rounded-full bg-vellum px-9 text-[15px] font-medium text-ink shadow-[0_18px_40px_-18px_rgba(236,230,218,.6)] transition hover:bg-white"
+            className="sheen mt-10 inline-flex h-13 items-center rounded-full bg-ink px-9 text-[15px] font-medium text-vellum shadow-[0_18px_40px_-18px_rgba(22,28,44,.6)] transition hover:bg-[#232b40] dark:bg-vellum dark:text-ink dark:shadow-[0_18px_40px_-18px_rgba(236,230,218,.6)] dark:hover:bg-white"
           >
             Create an account
           </Link>
         </div>
       </section>
 
-      <footer className="border-t border-vellum/[0.07]">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-6 px-6 py-10 text-sm text-vellum/50 sm:px-10">
-          <Logo className="text-vellum/80" />
-          <span>Self-hosted live classrooms.</span>
+      <footer className="border-t border-hi/[0.08]">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-6 px-6 py-10 text-sm text-hi/50 sm:px-10">
+          <Logo className="text-hi/80" />
+          <span>Private one-to-one tutoring, on your own servers.</span>
           <nav className="ml-auto flex gap-6">
-            <Link viewTransition to="/login" className="hover:text-vellum">
+            <Link viewTransition to="/login" className="hover:text-hi">
               Sign in
             </Link>
-            <Link viewTransition to="/register" className="hover:text-vellum">
+            <Link viewTransition to="/register" className="hover:text-hi">
               Create an account
             </Link>
           </nav>
         </div>
       </footer>
     </div>
-  );
-}
-
-function Chapter({ title, body }) {
-  return (
-    <article>
-      <div className="hairline mb-8 w-24" />
-      <h3 className="font-display text-[clamp(2rem,3.4vw,2.9rem)] leading-[1.05] font-normal">{title}</h3>
-      <p className="mt-5 max-w-lg text-[17px] leading-[1.75] text-vellum/70">{body}</p>
-    </article>
   );
 }
 
@@ -221,7 +406,7 @@ function ProductStage({ drawn }) {
     transition: `stroke-dashoffset 1.4s cubic-bezier(.22,1,.36,1) ${delay}s`,
   });
   return (
-    <div className="lamplight relative overflow-hidden rounded-[30px] border border-vellum/10 shadow-[0_60px_140px_-50px_rgba(0,0,0,.95),inset_0_1px_0_rgba(236,230,218,.06)]">
+    <div className="dark lacquer relative overflow-hidden rounded-[30px] border border-vellum/10 shadow-[0_60px_140px_-50px_rgba(0,0,0,.95),inset_0_1px_0_rgba(236,230,218,.06)]">
       <div className="flex items-center gap-3 px-5 py-4 text-sm">
         <Monogram size={24} />
         <span className="font-display text-lg">Calculus, session 7</span>
