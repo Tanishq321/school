@@ -103,6 +103,15 @@ browser ─SRTP─▶ mediasoup Router ──DirectTransport consumers (in-proce
 * `GET /api/meetings?scope=range&from&to` (≤ 62 days) feeds the month view. `GET /api/meetings/:code/calendar.ics` serves *Add to calendar*.
 * `GET /api/meetings/:code/summary` returns the class page. Everyone who may see the class gets the meeting and its viewable recordings. Only the host also gets private notes (`PUT /:code/notes`), attendance, guests and the chat transcript.
 
+## 3e. Teaching tools: series, lesson notes, register, reminders
+
+* **Weekly series:** `POST /api/meetings` with `repeatWeeks` (2–26) creates one class per week, each its own document with its own code, room and invite token, linked by `seriesId` and `seriesIndex`. One invitation email carries every date in a single `.ics` (`METHOD:PUBLISH`, one `VEVENT` per lesson). Editing changes one lesson. `DELETE /:code?scope=following` cancels this lesson and every later one that has not started; the student gets one email whose `.ics` (`METHOD:CANCEL`, `STATUS:CANCELLED`) removes them.
+* **Rescheduling:** when a scheduled class's time or length changes, the student gets an email with an `.ics` that updates the same calendar entry (same `UID`, higher `SEQUENCE`), and the reminder is re-armed.
+* **Lesson notes:** `meetings.lesson {summary, homework[{text, done, doneAt}], updatedAt}`, written by the host (`PUT /:code/lesson`, optional `notify` email), visible to everyone who may see the class, kept apart from the host's private `notes`. The student (or host) ticks items (`POST /:code/homework/:itemId`); edits keep ticks by item id.
+* **Register and figures:** `GET /api/students` and `/api/students/:email` (teachers) and `GET /api/me/stats?from&to` (everyone; the client sends its own local week or month) are computed from meetings and attendance; nothing extra is stored.
+* **Reminders:** a one-minute job emails host and student `REMINDER_MINUTES` before each scheduled class. Each reminder is claimed in `jobclaims` by a unique key (`reminder:<id>:<start>`) before any email goes out, so several API processes never send it twice. A class invited or moved in the last ten minutes is not reminded.
+* **Time zones:** the client reports the device's IANA zone (`PATCH /api/auth/me {timeZone}`, validated with `Intl`), and emails show times in each reader's zone.
+
 ## 4. Reliability behaviour (Phase 1)
 
 * **ICE failure**: on `failed`, or `disconnected` for more than 4 s, the offering side fetches fresh ICE servers (`ice:refresh`) and runs an ICE restart.
@@ -114,14 +123,15 @@ browser ─SRTP─▶ mediasoup Router ──DirectTransport consumers (in-proce
 
 | Collection | Key fields |
 |---|---|
-| users | name, email (unique), passwordHash (bcrypt 12), role (teacher/student/admin), emailVerified, status, teacherProfile, studentProfile |
+| users | name, email (unique), passwordHash (bcrypt 12), role (teacher/student/admin), emailVerified, status, teacherProfile, studentProfile, timeZone, twoFactor, lockout fields |
 | refreshtokens | user, tokenHash (sha256), family, expiresAt, revokedAt, replacedBy |
 | onetimetokens | user, purpose (email_verify / password_reset), tokenHash, expiresAt, usedAt |
-| meetings | code (unique, random), host, title, type, status, scheduledStart/End, startedAt/endedAt, lastActiveAt, settings {waitingRoom, passwordHash, maxParticipants, permissions…}, locked, bannedUsers, invitees, notes (host-only), inviteNonce |
+| meetings | code (unique, random), host, title, type, status, scheduledStart/End, startedAt/endedAt, lastActiveAt, settings {waitingRoom, passwordHash, maxParticipants, permissions…}, locked, bannedUsers, invitees, notes (host-only), lesson {summary, homework} (host and student), seriesId/seriesIndex, noticeSentAt, reminderSentAt, inviteNonce |
 | recordings | meeting, host, startedBy, title, status, startedAt/endedAt, durationSec, sizeBytes, file/thumbnail (relative, never serialised), shareWithParticipants, consent [{user, name, decision, at}], error |
 | chatmessages / whiteboards | per-meeting chat log (soft delete) and board operations |
 | attendances | meeting, user, role, joinedAt, leftAt, durationSec (one document per continuous session) |
 | auditlogs | actor, action, targetType, targetId, ip, meta |
+| jobclaims | key (unique), at: one-time claims for background work shared by several processes |
 
 ## 6. Security model (summary; see security.md)
 
@@ -139,4 +149,4 @@ browser ─SRTP─▶ mediasoup Router ──DirectTransport consumers (in-proce
 | 3 | Screen share (SFU + P2P), chat (persisted, moderated), whiteboard (live strokes, undo/redo, persisted), attendance CSV, classroom permissions, landing page, sound cues | Implemented and tested here (see testing.md) |
 | 4 | Consent-based recording (mediasoup → DirectTransport → per-track files → FFmpeg MP4), archive & signed playback, invitations + .ics, calendar, class pages (notes, attendance, transcript), dark-first shell | Implemented and tested here (see testing.md) |
 | 5 | Admin console (accounts, register, audit; no class content), lockout, TOTP two-step sign-in, device sessions, Prometheus metrics, Capacitor Android/iOS shells | Implemented and tested here, except the mobile shells (not compiled or run on devices) |
-| 6 | Production deployment, load tests, multi-server, DR | Docs started (deployment.md) |
+| 6 | Production deployment, load tests, multi-server, DR | In part: Dockerfile + compose (not built here: no registry access), backup/restore drill and runbook (tested), signalling load test (run, see operations.md); multi-server designed only |

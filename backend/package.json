@@ -10,7 +10,12 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "test": "vitest run",
-    "create-admin": "node src/scripts/createAdmin.js"
+    "create-admin": "node src/scripts/createAdmin.js",
+    "seed:demo": "node src/scripts/seedDemo.js",
+    "load:signalling": "node src/scripts/loadSignalling.js",
+    "backup": "node src/scripts/backup.js dump",
+    "restore": "node src/scripts/backup.js restore",
+    "backup:drill": "node src/scripts/backup.js drill"
   },
   "dependencies": {
     "bcrypt": "6.0.0",

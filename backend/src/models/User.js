@@ -18,6 +18,8 @@ const userSchema = new mongoose.Schema(
       bio: { type: String, maxlength: 1000, default: '' },
       gradeLevel: { type: String, maxlength: 50, default: '' },
     },
+    // IANA zone from the person's device, so emails show class times as they live them.
+    timeZone: { type: String, maxlength: 64, default: null },
     lastLoginAt: Date,
     // Account protection
     failedLogins: { type: Number, default: 0, select: false },

@@ -3,6 +3,8 @@ import { z } from 'zod';
 import * as admin from '../services/adminService.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import env from '../config/env.js';
+import { forbidden } from '../utils/errors.js';
 
 const id = z.object({ id: z.string().regex(/^[a-f0-9]{24}$/i, 'Invalid id') });
 const page = z.coerce.number().int().min(1).max(10_000).default(1);
@@ -10,6 +12,11 @@ const ctx = (req) => ({ ip: req.ip });
 
 const router = Router();
 router.use(requireAuth, requireRole('admin'));
+// The console holds every account: it opens only to administrators who sign in with two steps.
+router.use((req, _res, next) => {
+  if (env.ADMIN_REQUIRE_2FA && !req.user.twoFactor) throw forbidden('Turn on two-step sign-in in your account to open the console.', 'two_factor_required');
+  next();
+});
 
 router.get('/overview', async (_req, res) => res.json(await admin.overview()));
 

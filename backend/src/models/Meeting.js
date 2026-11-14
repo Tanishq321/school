@@ -43,6 +43,27 @@ const meetingSchema = new mongoose.Schema(
     // The invited student (by email): sees the class on their pages and skips the waiting room.
     invitees: { type: [String], default: [], validate: (v) => v.length <= 1 },
     notes: { type: String, maxlength: 20000, default: '' }, // the host's private class notes
+    // Weekly series: every occurrence is its own class (own code, own room), linked by seriesId.
+    seriesId: { type: String, index: true },
+    seriesIndex: Number,
+    // What the teacher leaves for the student after a lesson. Visible to both; the student ticks homework.
+    lesson: {
+      summary: { type: String, maxlength: 5000, default: '' },
+      homework: {
+        type: [
+          {
+            text: { type: String, required: true, trim: true, maxlength: 300 },
+            done: { type: Boolean, default: false },
+            doneAt: Date,
+          },
+        ],
+        default: [],
+        validate: (v) => v.length <= 20,
+      },
+      updatedAt: Date,
+    },
+    noticeSentAt: Date, // last invitation or reschedule email: the reminder is skipped right after one
+    reminderSentAt: { type: Date, default: null },
     bannedUsers: { type: [mongoose.Schema.Types.ObjectId], default: [], select: false },
     inviteNonce: { type: String, required: true, select: false },
   },
@@ -51,6 +72,7 @@ const meetingSchema = new mongoose.Schema(
 
 meetingSchema.index({ status: 1, scheduledEnd: 1 });
 meetingSchema.index({ invitees: 1, scheduledStart: 1 });
+meetingSchema.index({ status: 1, reminderSentAt: 1, scheduledStart: 1 });
 
 meetingSchema.set('toJSON', {
   transform(_doc, ret) {

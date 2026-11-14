@@ -47,6 +47,10 @@ const schema = z.object({
   NATIVE_APP_ORIGINS: csv,
   // Bearer token for GET /metrics (Prometheus). Unset = endpoint disabled.
   METRICS_TOKEN: z.string().min(24).optional(),
+  // Administrators must have two-step sign-in before the admin console opens. Default: on in production.
+  ADMIN_REQUIRE_2FA: bool.optional(),
+  // Email teacher and student this many minutes before a class (0 turns reminders off).
+  REMINDER_MINUTES: z.coerce.number().int().min(0).max(1440).default(30),
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
   REQUIRE_EMAIL_VERIFICATION: bool.default(true),
 
@@ -119,5 +123,6 @@ if (env.NODE_ENV === 'production') {
 env.corsOrigins = [...new Set([...(env.CORS_ORIGINS.length ? env.CORS_ORIGINS : [new URL(env.APP_URL).origin]), ...env.NATIVE_APP_ORIGINS])];
 env.isProd = env.NODE_ENV === 'production';
 env.isTest = env.NODE_ENV === 'test';
+env.ADMIN_REQUIRE_2FA ??= env.isProd;
 
 export default env;

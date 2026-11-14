@@ -8,11 +8,13 @@ import { audit } from '../services/auditService.js';
 import { buildIcs } from '../services/calendarService.js';
 import * as recordings from '../services/recordingService.js';
 import ChatMessage from '../models/ChatMessage.js';
+import Meeting from '../models/Meeting.js';
 import env from '../config/env.js';
 
 export async function create(req, res) {
   const meeting = await meetings.createMeeting(req.user, req.valid.body);
-  res.status(201).json({ meeting: { ...meetings.serializeForHost(meeting), isHost: true } });
+  const series = meeting.seriesId ? { id: meeting.seriesId, count: await Meeting.countDocuments({ seriesId: meeting.seriesId }) } : null;
+  res.status(201).json({ meeting: { ...meetings.serializeForViewer(meeting, req.user), isHost: true }, series });
 }
 
 export async function list(req, res) {
@@ -57,9 +59,8 @@ export async function end(req, res) {
 
 export async function cancel(req, res) {
   const meeting = await meetings.getForHost(req.valid.params.code, req.user);
-  if (meeting.status === 'live') throw new AppError(409, 'meeting_live', 'End the live meeting instead of deleting it');
-  await meetings.endMeeting(meeting, 'host_ended', req.user.id);
-  res.status(204).end();
+  const cancelled = await meetings.cancelClasses(meeting, req.valid.query.scope, req.user);
+  res.json({ cancelled });
 }
 
 export async function participants(req, res) {
@@ -95,7 +96,11 @@ export async function summary(req, res) {
   const recs = (await recordings.listForUser(req.user, { meetingId: meeting._id }))
     .filter((r) => r.mine || r.status === 'ready')
     .map((r) => (r.status === 'ready' ? { ...r, posterUrl: `/api/recordings/${r.id}/poster?token=${signPlaybackToken({ userId: req.user.id, recordingId: r.id, ttlSeconds: 7200, scope: 'poster' })}` } : r));
-  const out = { meeting: meetings.serializeForViewer(meeting, req.user), recordings: recs };
+  const out = { meeting: meetings.serializeForViewer(meeting, req.user), recordings: recs, lesson: meetings.serializeLesson(meeting) };
+  if (meeting.seriesId) {
+    const siblings = await Meeting.find({ seriesId: meeting.seriesId }).select('code scheduledStart status seriesIndex').sort({ scheduledStart: 1 }).lean();
+    out.series = { id: meeting.seriesId, lessons: siblings.map((m) => ({ code: m.code, scheduledStart: m.scheduledStart, status: m.status, index: m.seriesIndex })) };
+  }
   if (isHost) {
     const [attendanceRows, chat, guests] = await Promise.all([
       attendance.summarize(meeting._id),
@@ -122,4 +127,17 @@ export async function ics(req, res) {
   res.set('Content-Disposition', `attachment; filename="${name}.ics"`);
   res.set('Cache-Control', 'no-store');
   res.send(body);
+}
+
+/** The teacher's lesson summary and homework (shared with the student). */
+export async function saveLesson(req, res) {
+  const meeting = await meetings.getForHost(req.valid.params.code, req.user);
+  res.json({ lesson: await meetings.saveLesson(meeting, req.valid.body, req.user) });
+}
+
+/** Tick or untick a piece of homework: the student, or the teacher on their behalf. */
+export async function homework(req, res) {
+  const meeting = await meetings.getByCode(req.valid.params.code);
+  if (!(await meetings.canSeeMeeting(meeting, req.user))) throw forbidden('This class is not on your calendar');
+  res.json({ lesson: await meetings.setHomeworkDone(meeting, req.valid.params.itemId, req.valid.body.done, req.user) });
 }

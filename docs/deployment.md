@@ -2,6 +2,8 @@
 
 Target: one Ubuntu 24.04 VPS running Nginx, Node (PM2), MongoDB and coturn. Recommended starting size for Phase 1: 2 vCPU / 4 GB RAM. TURN relaying is bandwidth-bound: each relayed 1-to-1 call costs about 2 × 1.5–2.5 Mbps.
 
+> **Prefer containers?** `docker compose up -d --build` runs the same stack (app, MongoDB, coturn, Caddy for HTTPS): see [infrastructure/docker/README.md](../infrastructure/docker/README.md). Backups, the restore drill and the recovery runbook are in [operations.md](operations.md). They apply to both set-ups.
+
 Two DNS names pointing at the server's **public IP**:
 - `class.example.com`: web app + API
 - `turn.example.com`: coturn (a separate name lets you move TURN to its own box later)

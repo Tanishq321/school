@@ -40,7 +40,19 @@ router.post('/resend-verification', requireAuth, emailLimiter, c.resendVerificat
 router.post('/forgot-password', emailLimiter, validate({ body: z.object({ email }) }), c.forgotPassword);
 router.post('/reset-password', authLimiter, validate({ body: z.object({ token, password }) }), c.resetPassword);
 router.get('/me', requireAuth, c.me);
-router.patch('/me', requireAuth, validate({ body: z.object({ name: name.optional(), profile: profile.optional() }) }), c.updateProfile);
+// A real IANA zone (checked by Intl), e.g. "Europe/London".
+const timeZone = z
+  .string()
+  .max(64)
+  .refine((tz) => {
+    try {
+      new Intl.DateTimeFormat('en-GB', { timeZone: tz });
+      return true;
+    } catch {
+      return false;
+    }
+  }, 'Unknown time zone');
+router.patch('/me', requireAuth, validate({ body: z.object({ name: name.optional(), profile: profile.optional(), timeZone: timeZone.optional() }) }), c.updateProfile);
 
 // Security settings (all need a signed-in user; sensitive ones re-ask for the password)
 router.post('/2fa/setup', requireAuth, authLimiter, c.twoFactorBegin);

@@ -26,11 +26,11 @@ const PORT = Number(process.env.E2E_PORT || 4100);
 const SPLIT = process.env.E2E_SPLIT === '1';
 // E2E_SFU=1 runs every call through the mediasoup SFU instead of peer-to-peer.
 const SFU = process.env.E2E_SFU === '1';
-const SCENARIOS = (process.env.E2E_SCENARIOS || (SFU ? 'direct,relay,seat,recording' : 'direct,relay,seat,security')).split(',');
+const SCENARIOS = (process.env.E2E_SCENARIOS || (SFU ? 'direct,relay,seat,recording' : 'direct,relay,seat,security,lessons')).split(',');
 const REC_DIR = path.join(ROOT, 'e2e', 'artifacts', 'recordings-tmp');
 const FRONT_PORT = PORT + 1;
 const BASE = SPLIT ? `http://localhost:${FRONT_PORT}` : `http://localhost:${PORT}`;
-const ART = path.join(ROOT, 'e2e', 'artifacts', process.env.E2E_SPLIT === '1' ? 'split' : process.env.E2E_SFU === '1' ? 'sfu' : '');
+const ART = path.join(ROOT, 'e2e', 'artifacts', process.env.E2E_SPLIT === '1' ? 'split' : process.env.E2E_SFU === '1' ? 'sfu' : '', process.env.E2E_SCHEME || '');
 const TURN_SECRET = 'e2e-turn-secret-0123456789abcdef0123456789';
 fs.mkdirSync(ART, { recursive: true });
 
@@ -86,6 +86,7 @@ const backendEnv = () => ({
         RECORDINGS_DIR: REC_DIR,
         RECORDING_MIN_FREE_MB: '0',
         LOGIN_MAX_FAILURES: '4',
+        ADMIN_REQUIRE_2FA: 'true',
 });
 
 function startBackend() {
@@ -178,6 +179,8 @@ async function launch(label) {
   });
   const page = await browser.newPage();
   page.label = label;
+  // E2E_SCHEME=dark|light emulates the device's colour scheme (the app follows it).
+  if (process.env.E2E_SCHEME) await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: process.env.E2E_SCHEME }]);
   page.on('pageerror', (e) => log(`[${label}] pageerror`, e.message));
   page.on('console', (m) => m.type() === 'error' && !/favicon|401|Failed to load resource/.test(m.text()) && log(`[${label}] console.error`, m.text()));
   return { browser, page };
@@ -678,6 +681,20 @@ function totpCode(secretB32, stepOffset = 0) {
   return String((((mac[o] & 127) << 24) | (mac[o + 1] << 16) | (mac[o + 2] << 8) | mac[o + 3]) % 1e6).padStart(6, '0');
 }
 
+/** Turns on two-step sign-in from the account page; returns the authenticator secret. */
+async function enableTwoStep(page) {
+  await waitSel(page, '[data-testid="member-card"]');
+  await clickText(page, 'button', 'Turn on');
+  await waitSel(page, '[data-testid="totp-secret"]');
+  const secret = await page.$eval('[data-testid="totp-secret"]', (e) => e.textContent.replace(/\s/g, ''));
+  await page.type('[role="dialog"] input[inputmode="numeric"]', totpCode(secret));
+  await clickText(page, '[role="dialog"] button[type="submit"]', 'Turn on');
+  await waitSel(page, '[data-testid="recovery-codes"]');
+  await clickText(page, 'button', 'I have saved them');
+  await page.waitForFunction(() => document.querySelector('[data-testid="two-step-status"]')?.textContent === 'On', { timeout: 8000 });
+  return secret;
+}
+
 async function securityScenario() {
   const tag = Date.now() % 100000;
   const tEmail = `sec.teacher.${tag}@example.test`;
@@ -713,6 +730,28 @@ async function securityScenario() {
       await T.page.waitForSelector('[data-testid="devices"] li');
       await sleep(600);
       await T.page.screenshot({ path: path.join(ART, 'account.png'), fullPage: true });
+    });
+
+    await step('[security] the theme follows the device live, and the Appearance setting overrides it', async () => {
+      const isDark = () => T.page.evaluate(() => document.documentElement.classList.contains('dark'));
+      const scheme = (v) => T.page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: v }]);
+      await scheme('light');
+      await T.page.waitForFunction(() => !document.documentElement.classList.contains('dark'), { timeout: 5000 });
+      await scheme('dark'); // the device switches to dark (e.g. at sunset): no reload
+      await T.page.waitForFunction(() => document.documentElement.classList.contains('dark'), { timeout: 5000 });
+      const meta = await T.page.$eval('meta[name="theme-color"]', (m) => m.content);
+      if (meta !== '#0f1628') throw new Error(`theme-color not updated: ${meta}`);
+      await clickText(T.page, '[data-testid="appearance"] button', 'Light');
+      await T.page.waitForFunction(() => !document.documentElement.classList.contains('dark'), { timeout: 5000 });
+      await T.page.reload({ waitUntil: 'networkidle0' }); // the choice survives a reload, before first paint
+      if (await isDark()) throw new Error('fixed Light did not persist');
+      await T.page.screenshot({ path: path.join(ART, 'account-light.png') });
+      await clickText(T.page, '[data-testid="appearance"] button', 'Follow device');
+      await T.page.waitForFunction(() => document.documentElement.classList.contains('dark'), { timeout: 5000 });
+      await sleep(500);
+      await T.page.screenshot({ path: path.join(ART, 'account-dark.png') });
+      await scheme(process.env.E2E_SCHEME || 'light');
+      return 'light → dark with the device; Light kept after reload; Follow device restored';
     });
 
     await step('[security] signing in again needs the code; a wrong code is refused', async () => {
@@ -763,6 +802,19 @@ async function securityScenario() {
       await S.page.waitForFunction(() => document.body.innerText.includes('Too many failed attempts'), { timeout: 8000 });
     });
 
+    await step('[security] the console stays closed until the administrator turns on two-step sign-in', async () => {
+      await uiLogin(A.page, aEmail, 'Classroom123456');
+      await A.page.goto(`${BASE}/admin`, { waitUntil: 'networkidle0' });
+      await waitSel(A.page, '[data-testid="two-step-gate"]');
+      const api = await A.page.evaluate(async () => (await fetch('/api/admin/overview')).status);
+      if (api !== 401 && api !== 403) throw new Error(`admin API without a token answered ${api}`);
+      await A.page.screenshot({ path: path.join(ART, 'admin-two-step-gate.png') });
+      await clickText(A.page, 'a', 'Set up two-step sign-in');
+      await A.page.waitForFunction(() => location.pathname === '/profile', { timeout: 8000 });
+      await enableTwoStep(A.page);
+      return 'gate shown, two-step turned on from it';
+    });
+
     await step('[security] administrator: overview, live class without its content, system health', async () => {
       // The teacher opens a room so there is something in session.
       await T.page.goto(`${BASE}/`, { waitUntil: 'networkidle0' });
@@ -771,7 +823,7 @@ async function securityScenario() {
       const code = T.page.url().split('/m/')[1];
       await clickText(T.page, 'button', 'Start class');
       await waitSel(T.page, '[data-testid="meeting-room"]');
-      await uiLogin(A.page, aEmail, 'Classroom123456');
+      await A.page.goto(`${BASE}/`, { waitUntil: 'networkidle0' }); // still signed in from the step above
       await A.page.click('a[href="/admin"]');
       await waitSel(A.page, '[data-testid="admin-live"]');
       await A.page.waitForFunction(() => document.querySelector('[data-testid="admin-live"]').innerText.includes('Eleanor Whitcombe'), { timeout: 10_000 });
@@ -819,6 +871,117 @@ async function securityScenario() {
   }
 }
 
+// ---------------------------------------------------------------- lessons: series, notes, homework, register
+
+// innerText follows CSS text-transform (eyebrows are upper-case), so compare without case
+const bodyHas = (page, text, timeout = 10_000) => page.waitForFunction((t) => document.body.innerText.toLowerCase().includes(t.toLowerCase()), { timeout }, text);
+const mailsTo = (email, subject) => backendLogs.split('\n').filter((l) => l.includes('[dev-mail]') && l.includes(email) && l.includes(subject)).length;
+
+async function lessonsScenario() {
+  const tag = Date.now() % 100000;
+  const tEmail = `les.teacher.${tag}@example.test`;
+  const sEmail = `les.student.${tag}@example.test`;
+  await step('[lessons] create a teacher and a student', async () => {
+    await apiRegister('Clara Whitlock', tEmail, 'teacher');
+    await apiRegister('Noor Haddad', sEmail, 'student');
+  });
+  const T = await launch('les-teacher');
+  const S = await launch('les-student');
+  let classUrl;
+  let lesson3;
+  try {
+    await step('[lessons] the teacher schedules a weekly series of four; one invitation goes out', async () => {
+      await uiLogin(T.page, tEmail);
+      await clickText(T.page, 'button', 'Schedule');
+      await waitSel(T.page, '[data-testid="repeat"]');
+      await T.page.type('[role="dialog"] input[placeholder^="e.g."]', 'Arabic, conversation');
+      await T.page.type('[role="dialog"] input[type="email"]', sEmail);
+      await T.page.select('[data-testid="repeat"]', '4');
+      await bodyHas(T.page, 'Each lesson can be moved or cancelled on its own');
+      await clickText(T.page, '[role="dialog"] button[type="submit"]', 'Schedule 4 lessons');
+      await bodyHas(T.page, '4 weekly lessons scheduled');
+      await bodyHas(T.page, 'Weekly');
+      await sleep(400);
+      const invites = mailsTo(sEmail, 'invited you');
+      if (invites !== 1) throw new Error(`expected one invitation email, saw ${invites}`);
+      return 'four lessons, one email with every date';
+    });
+
+    await step('[lessons] the students register lists the student; the series is on their page', async () => {
+      await T.page.click('a[href="/students"]');
+      await waitSel(T.page, '[data-testid="roster"]');
+      await bodyHas(T.page, 'Noor Haddad');
+      await clickText(T.page, '[data-testid="roster"] a', 'Noor Haddad');
+      await bodyHas(T.page, 'Booked');
+      const booked = await T.page.$$eval('a[href^="/classes/"]', (as) => as.filter((a) => a.textContent.includes('Arabic')).length);
+      if (booked !== 4) throw new Error(`expected 4 booked lessons, saw ${booked}`);
+      await T.page.screenshot({ path: path.join(ART, 'lessons-student-page.png'), fullPage: true });
+      await clickText(T.page, 'a[href^="/classes/"]', 'Arabic, conversation');
+      await waitSel(T.page, '[data-testid="series"]');
+      await bodyHas(T.page, 'lesson 1 of 4');
+      classUrl = T.page.url();
+      lesson3 = await T.page.$$eval('[data-testid="series"] a', (as) => as[2].getAttribute('href'));
+    });
+
+    await step('[lessons] the teacher writes a summary and homework and sends it', async () => {
+      await waitSel(T.page, '[data-testid="lesson-editor"]');
+      await T.page.type('textarea[aria-label="Summary for your student"]', 'Greetings and introductions went well. Work on the emphatic consonants.');
+      for (const hw of ['Read dialogue 3 aloud twice', 'Write five sentences about your family']) {
+        await T.page.type('input[aria-label="New homework"]', hw);
+        await T.page.keyboard.press('Enter');
+      }
+      await clickText(T.page, 'button', 'Save and send to Noor');
+      await bodyHas(T.page, 'Saved and sent to Noor Haddad');
+      await sleep(400);
+      if (!mailsTo(sEmail, 'Notes from your lesson')) throw new Error('no notes email to the student');
+      await T.page.screenshot({ path: path.join(ART, 'lessons-teacher-editor.png'), fullPage: true });
+    });
+
+    await step('[lessons] the student reads the notes and ticks homework; the tick persists', async () => {
+      await uiLogin(S.page, sEmail);
+      await S.page.goto(classUrl, { waitUntil: 'networkidle0' });
+      await waitSel(S.page, '[data-testid="lesson-view"]');
+      await bodyHas(S.page, 'emphatic consonants');
+      await bodyHas(S.page, '0 of 2 done');
+      await S.page.click('[data-testid="lesson-view"] button[role="checkbox"]');
+      await bodyHas(S.page, '1 of 2 done');
+      await S.page.reload({ waitUntil: 'networkidle0' });
+      await bodyHas(S.page, '1 of 2 done');
+      if ((await S.page.$('[data-testid="lesson-editor"]')) || (await S.page.$('textarea[aria-label="Private notes"]'))) throw new Error('the student sees teacher-only tools');
+      await S.page.screenshot({ path: path.join(ART, 'lessons-student-view.png'), fullPage: true });
+    });
+
+    await step("[lessons] the teacher sees the student's tick, on the class page and in the register", async () => {
+      await T.page.reload({ waitUntil: 'networkidle0' });
+      await waitSel(T.page, '[data-testid="lesson-editor"]');
+      const ticks = await T.page.$$eval('[data-testid="lesson-editor"] button[role="checkbox"]', (b) => b.map((x) => x.getAttribute('aria-checked')));
+      if (ticks.join() !== 'true,false') throw new Error(`teacher sees ticks ${ticks.join()}`);
+      await T.page.goto(`${BASE}/students`, { waitUntil: 'networkidle0' });
+      await bodyHas(T.page, '1/2 done');
+    });
+
+    await step('[lessons] the teacher cancels lesson three and the rest; the student is told once', async () => {
+      await T.page.goto(`${BASE}${lesson3}`, { waitUntil: 'networkidle0' });
+      await bodyHas(T.page, 'lesson 3 of 4');
+      await clickText(T.page, 'button', 'Cancel');
+      await clickText(T.page, '[role="dialog"] button', 'This and following lessons');
+      await bodyHas(T.page, '2 lessons cancelled');
+      await sleep(400);
+      if (mailsTo(sEmail, 'Cancelled:') !== 1) throw new Error('expected one cancellation email');
+      const struck = await T.page.$$eval('[data-testid="series"] a', (as) => as.map((a) => a.className.includes('opacity-45')));
+      if (struck.join() !== 'false,false,true,true') throw new Error(`series strip shows ${struck.join()}`);
+      await T.page.screenshot({ path: path.join(ART, 'lessons-cancelled.png') });
+    });
+  } catch (err) {
+    // keep what each person saw when a step failed
+    await T.page.screenshot({ path: path.join(ART, 'lessons-fail-teacher.png'), fullPage: true }).catch(() => {});
+    await S.page.screenshot({ path: path.join(ART, 'lessons-fail-student.png'), fullPage: true }).catch(() => {});
+    throw err;
+  } finally {
+    await Promise.all([T, S].map((p) => p.browser.close().catch(() => {})));
+  }
+}
+
 // ---------------------------------------------------------------- main
 
 let failed = false;
@@ -833,6 +996,7 @@ try {
       if (mode === 'seat') await seatScenario();
       else if (mode === 'recording') await recordingScenario();
       else if (mode === 'security') await securityScenario();
+      else if (mode === 'lessons') await lessonsScenario();
       else await scenario(mode);
     } catch {
       failed = true;

@@ -12,6 +12,7 @@ import authRoutes from './routes/authRoutes.js';
 import meetingRoutes, { diagnosticsRouter } from './routes/meetingRoutes.js';
 import recordingRoutes from './routes/recordingRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
+import { meRouter, studentsRouter } from './routes/insightRoutes.js';
 import { httpMetrics, renderPrometheus } from './services/metrics.js';
 import { getIo } from './sockets/realtime.js';
 import { safeEqual } from './utils/crypto.js';
@@ -81,6 +82,8 @@ export function createApp() {
       mediaMode: workerPool.ready ? 'sfu' : 'p2p',
       classSize: 2, // one teacher, one student
       appName: env.APP_NAME,
+      adminRequiresTwoFactor: env.ADMIN_REQUIRE_2FA,
+      reminderMinutes: env.REMINDER_MINUTES,
       recording: { enabled: env.RECORDING_ENABLED && workerPool.ready, retentionDays: env.RECORDING_RETENTION_DAYS, maxMinutes: env.RECORDING_MAX_MINUTES },
     });
   });
@@ -90,6 +93,8 @@ export function createApp() {
   app.use('/api/meetings', meetingRoutes);
   app.use('/api/recordings', recordingRoutes);
   app.use('/api/admin', adminRoutes);
+  app.use('/api/students', studentsRouter);
+  app.use('/api/me', meRouter);
   app.use('/api/diagnostics', diagnosticsRouter);
   app.use('/api', notFoundHandler);
 

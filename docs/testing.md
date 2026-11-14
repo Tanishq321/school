@@ -27,6 +27,13 @@ Each test file uses a throwaway database. Coverage:
   - Native-app mode: refresh token in the body, no cookie, rotation, refused for browsers and foreign origins.
   - Administration: closed to non-admins (401/403); the overview and class register never contain a class title or code; admins get 403 on class content; ending a class; search is regex-safe; suspension drops the live socket and blocks tokens and sign-in at once; self-suspension, self-demotion and unknown roles are refused; forced sign-out kills access and refresh tokens; the audit trail records administrator actions.
   - Metrics: 404 without the token, Prometheus text with it, no personal data.
+- **lessons.test.js**:
+  - Weekly series: one class per week with distinct codes and the right times; one invitation for the whole series in the student's own time zone, with an `.ics` of every date (semicolons escaped per RFC 5545); limits (no repeating instant classes, at most 26); the class page lists the series; "this and following" cancels the right lessons and sends one `METHOD:CANCEL` email; a single cancel leaves the rest; only the teacher can cancel.
+  - Rescheduling emails the new and old time with a calendar update and re-arms the reminder; a title change alone sends nothing.
+  - Reminders reach teacher and student exactly once even with two sweeps running at once, carry the student's direct link, and are skipped right after an invitation.
+  - Lesson notes: the student reads summary and homework but never the private notes; only the teacher writes; only the class may tick; ticks survive edits; empty and oversized homework is refused.
+  - Register and figures: lessons held and attended, attendance rate, hours, homework; another teacher sees nothing; students are refused; period validation.
+  - Time zones accept real IANA zones only. Administrators are refused the console until two-step is on.
 - **sockets.test.js**: handshake auth (invalid token, unverified user), waiting room + host notifications, waiting users can't signal, non-hosts can't admit, admission events, signalling relayed only between members and tagged with sender, payload validation, media-state broadcast, ICE refresh, 1-to-1 capacity enforcement, join tokens bound to their user, reconnect grace period (attendance not split), seat freed after grace, host-only end, attendance closure and totals, joining before host + auto-admit, idle meeting auto-end.
 
 ## 2. End-to-end WebRTC tests (Puppeteer + Chrome + coturn)
@@ -44,14 +51,24 @@ It runs twice: **direct** and **TURN relay forced** (`iceTransportPolicy: relay`
 
 What this proves and what it doesn't: the WebRTC stack is real (ICE, DTLS, SRTP, VP8/Opus encode and decode, TURN allocation and relaying). The camera and microphone are Chrome's built-in fake capture devices (test pattern + beep), because the CI machine has no camera. Both browsers run on one host. It does **not** replace testing on physical devices across real networks (below).
 
-## 3. Results of the last run (Phase 5)
+## 3. Results of the last run (teaching tools, Phase 6 slice)
 
 | Suite | Result |
 |---|---|
-| Backend (Vitest): auth, meetings, sockets (incl. one-student rule, two early arrivals), SFU + host controls, chat / whiteboard / screen share, recording, invitations, calendar, class pages, **lockout, two-step sign-in, devices, administration, metrics** | 79 / 79 |
-| E2E peer-to-peer (`node run-e2e.mjs`): direct + TURN relay + **seat rule** (3 browsers: the second student can't be admitted until the first leaves) + **security and administration** | 47 / 47 |
-| E2E split origins (`E2E_SPLIT=1`, Vercel-style proxy + direct sockets), same scenarios | 47 / 47 |
-| E2E SFU (`E2E_SFU=1`): direct, relay, seat rule, **real recording** | 49 / 49 |
+| Backend (Vitest): auth, meetings, sockets (incl. one-student rule, two early arrivals), SFU + host controls, chat / whiteboard / screen share, recording, invitations, calendar, class pages, lockout, two-step sign-in, devices, administration, metrics, **weekly series, cancel and reschedule emails, reminders, lesson notes and homework, register and figures, time zones, admin two-step requirement** | 97 / 97 |
+| E2E peer-to-peer (`node run-e2e.mjs`, light scheme): direct + TURN relay + seat rule + security and administration (**now with the admin two-step gate**) + **lessons** | 56 / 56 |
+| E2E split origins (`E2E_SPLIT=1`, dark scheme), same scenarios | 56 / 56 |
+| E2E SFU (`E2E_SFU=1`, dark scheme): direct, relay, seat rule, real recording | 49 / 49 |
+| Backup restore drill (`npm run backup:drill`) | identical on 43 and 4,517 documents |
+| Signalling load test (`npm run load:signalling`) | 300 sockets, 100 % delivery, relay p95 0.8 ms; see [operations.md](operations.md) |
+
+New E2E scenario (`lessons`, two real Chrome instances, teacher and student):
+1. The teacher schedules a weekly series of four from Today (the Repeat menu). Exactly one invitation email goes out.
+2. The students register lists the student; their page shows four booked lessons; the class page shows "lesson 1 of 4".
+3. The teacher writes a summary and two pieces of homework and chooses *Save and send*; the notes email goes out.
+4. The student opens the class: the notes and "0 of 2 done"; ticks one; the tick survives a reload; no teacher tools are on the page.
+5. The teacher sees the tick on the class page and "1/2 done" in the register.
+6. The teacher cancels lesson three "and following": two lessons cancelled, one email to the student, the series strip shows them struck.
 
 New Phase 5 E2E scenario (`security`, three real Chrome instances: teacher, student, administrator):
 1. The teacher turns on two-step sign-in in the UI. The test reads the setup key and computes real TOTP codes, as an authenticator app would. Ten recovery codes are shown.
@@ -63,6 +80,10 @@ New Phase 5 E2E scenario (`security`, three real Chrome instances: teacher, stud
 7. The administrator ends the live class; the audit trail lists the administrator's actions, the lockout and the two-step change.
 
 **Not tested:** the Android and iOS projects (no SDK or device here; see mobile-apps.md), and Prometheus/alerting against a real Prometheus server (the endpoint's output format is tested).
+
+Design update, also in the `security` scenario: the device switches from light to dark mid-session and the page follows without reloading (including the browser's `theme-color`). Choosing **Light** under Appearance overrides the device and survives a reload; **Follow device** hands control back. `E2E_SCHEME=light|dark` runs any suite under that device setting; screenshots go to `e2e/artifacts/<suite>/<scheme>/`.
+
+The 3D landing page was checked by screenshot (desktop 1440×900 and phone 390×844, light and dark, each scroll chapter, and reduced motion) on a GPU-less renderer. It has not been timed on real phones; on a weak GPU, watch for dropped frames during the scroll story.
 
 Phase 4 E2E scenario (`recording`, two real Chrome instances through the SFU, with simulcast):
 1. The teacher clicks *Record this class* → *Begin recording*.

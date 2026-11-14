@@ -139,9 +139,10 @@ export async function me(req, res) {
 }
 
 export async function updateProfile(req, res) {
-  const { name, profile } = req.valid.body;
+  const { name, profile, timeZone } = req.valid.body;
   const user = await User.findById(req.user.id);
   if (name) user.name = name;
+  if (timeZone) user.timeZone = timeZone;
   if (profile) {
     if (user.role === 'teacher') Object.assign(user.teacherProfile, profile);
     if (user.role === 'student') Object.assign(user.studentProfile, profile);

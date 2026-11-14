@@ -82,6 +82,9 @@
   - Can manage accounts, see the class register, end a class, and read the audit trail. Every action is itself audited.
   - Cannot read class titles, codes, chat, notes, whiteboards or recordings: the admin API never returns them, and the class and recording endpoints refuse non-participants.
   - Cannot suspend or demote themselves, and the last active administrator cannot be removed.
+- **Administrators need two-step sign-in** (`ADMIN_REQUIRE_2FA`, default on in production): the admin API answers `403 two_factor_required` until the administrator has turned it on, and the console shows a gate that leads to the setup.
+- **Lesson notes vs private notes:** the summary and homework (`lesson`) are shared with the student by design; the host's `notes` are never sent to anyone else (tested).
+- **Backups** contain personal data. `backup.js` creates files readable by their owner only; store copies encrypted at rest and restrict who can fetch them.
 - **Mobile apps:** identify with `X-Client-Platform: native`, receive the refresh token in the body, and must come from an origin in `NATIVE_APP_ORIGINS`. Browsers cannot use the body route.
 - **Metrics:** `/metrics` needs `METRICS_TOKEN` and exposes no personal data.
 
@@ -89,6 +92,5 @@
 
 - CAPTCHA on sign-in (lockout and rate limits only today)
 - Secure file uploads → arrive with features that need uploads (Phase 3+)
-- Enforcing two-step sign-in for administrators (the console warns; it is not yet mandatory)
 - Passkeys / WebAuthn
 - Redis-backed rate limits for multi-instance deployments → Phase 6

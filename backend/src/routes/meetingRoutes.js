@@ -39,8 +39,11 @@ const createBody = z
     chatMode: z.enum(['everyone', 'host']).optional(),
     saveChat: z.boolean().optional(),
     invitees: invitees.optional(),
+    // Weekly series: this many lessons in all, a week apart (scheduled classes only).
+    repeatWeeks: z.number().int().min(1).max(26).optional(),
   })
   .strict()
+  .refine((b) => b.type === 'scheduled' || !b.repeatWeeks || b.repeatWeeks === 1, { message: 'Only scheduled classes repeat', path: ['repeatWeeks'] })
   .refine((b) => b.type === 'instant' || b.scheduledStart, { message: 'scheduledStart is required for scheduled meetings', path: ['scheduledStart'] });
 
 const updateBody = z
@@ -84,7 +87,7 @@ router.get('/', validate({ query: listQuery }), c.list);
 router.post('/', requireVerifiedEmail, requireRole('teacher', 'admin'), validate({ body: createBody }), c.create);
 router.get('/:code', meetingLookupLimiter, validate({ params: codeParams }), c.get);
 router.patch('/:code', validate({ params: codeParams, body: updateBody }), c.update);
-router.delete('/:code', validate({ params: codeParams }), c.cancel);
+router.delete('/:code', validate({ params: codeParams, query: z.object({ scope: z.enum(['one', 'following']).default('one') }) }), c.cancel);
 router.post('/:code/join', requireVerifiedEmail, meetingLookupLimiter, validate({ params: codeParams, body: joinBody }), c.join);
 router.post('/:code/leave', validate({ params: codeParams }), c.leave);
 router.post('/:code/end', validate({ params: codeParams }), c.end);
@@ -92,6 +95,22 @@ router.get('/:code/participants', validate({ params: codeParams }), c.participan
 router.get('/:code/attendance', validate({ params: codeParams }), c.attendanceReport);
 router.get('/:code/summary', validate({ params: codeParams }), c.summary);
 router.get('/:code/calendar.ics', validate({ params: codeParams }), c.ics);
+const lessonBody = z
+  .object({
+    summary: z.string().trim().max(5000).optional(),
+    homework: z
+      .array(z.object({ id: z.string().regex(/^[a-f0-9]{24}$/i).optional(), text: z.string().trim().min(1, 'Homework cannot be empty').max(300) }).strict())
+      .max(20, 'At most 20 pieces of homework')
+      .optional(),
+    notify: z.boolean().optional(),
+  })
+  .strict();
+router.put('/:code/lesson', validate({ params: codeParams, body: lessonBody }), c.saveLesson);
+router.post(
+  '/:code/homework/:itemId',
+  validate({ params: codeParams.extend({ itemId: z.string().regex(/^[a-f0-9]{24}$/i, 'Invalid item') }), body: z.object({ done: z.boolean() }).strict() }),
+  c.homework,
+);
 router.put('/:code/notes', validate({ params: codeParams, body: z.object({ notes: z.string().max(20000) }).strict() }), c.saveNotes);
 
 export default router;

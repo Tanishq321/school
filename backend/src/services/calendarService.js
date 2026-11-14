@@ -1,7 +1,7 @@
 import env from '../config/env.js';
 
 const stamp = (d) => new Date(d).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-const text = (s) => String(s ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+const text = (s) => String(s ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
 
 /** RFC 5545 line folding: lines longer than 75 octets continue on the next line after a space. */
 function fold(line) {
@@ -24,16 +24,9 @@ function fold(line) {
   return out.join('\r\n ');
 }
 
-/** An iCalendar event for one class, for "Add to calendar" and email invitations. */
-export function buildIcs(meeting, { url, hostName, method = 'PUBLISH' }) {
+function vevent(meeting, { url, hostName, cancelled }) {
   const host = new URL(env.APP_URL).hostname;
-  const cancelled = meeting.status === 'cancelled';
   const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    `PRODID:-//${text(env.APP_NAME)}//Classes//EN`,
-    'CALSCALE:GREGORIAN',
-    `METHOD:${cancelled ? 'CANCEL' : method}`,
     'BEGIN:VEVENT',
     `UID:${meeting._id}@${host}`,
     `DTSTAMP:${stamp(new Date())}`,
@@ -45,13 +38,31 @@ export function buildIcs(meeting, { url, hostName, method = 'PUBLISH' }) {
     `URL:${url}`,
     `LOCATION:${text(url)}`,
     `STATUS:${cancelled ? 'CANCELLED' : 'CONFIRMED'}`,
-    'BEGIN:VALARM',
-    'ACTION:DISPLAY',
-    `DESCRIPTION:${text(meeting.title)}`,
-    'TRIGGER:-PT10M',
-    'END:VALARM',
-    'END:VEVENT',
+  ];
+  if (!cancelled) lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${text(meeting.title)}`, 'TRIGGER:-PT10M', 'END:VALARM');
+  lines.push('END:VEVENT');
+  return lines;
+}
+
+/**
+ * An iCalendar file for one or more classes (a weekly series travels as one file), for
+ * "Add to calendar" and the emails. A cancelled class is sent with METHOD:CANCEL, so calendars remove it.
+ */
+export function buildIcsMany(items, { hostName, method = 'PUBLISH' } = {}) {
+  const cancelled = items.length > 0 && items.every(({ meeting }) => meeting.status === 'cancelled');
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    `PRODID:-//${text(env.APP_NAME)}//Classes//EN`,
+    'CALSCALE:GREGORIAN',
+    `METHOD:${cancelled ? 'CANCEL' : method}`,
+    ...items.flatMap(({ meeting, url }) => vevent(meeting, { url, hostName, cancelled: meeting.status === 'cancelled' })),
     'END:VCALENDAR',
   ];
   return `${lines.map(fold).join('\r\n')}\r\n`;
+}
+
+/** An iCalendar event for one class. */
+export function buildIcs(meeting, { url, hostName, method = 'PUBLISH' }) {
+  return buildIcsMany([{ meeting, url }], { hostName, method });
 }
