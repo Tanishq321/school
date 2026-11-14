@@ -1,0 +1,68 @@
+# Scholé on one server: the app, MongoDB, coturn (TURN relay) and Caddy (automatic HTTPS).
+#
+#   cp infrastructure/docker/.env.example infrastructure/docker/.env   # then fill it in
+#   docker compose up -d --build
+#
+# The app, coturn and Caddy use the host's network: WebRTC media (mediasoup and TURN) needs real UDP
+# ports and the server's public address, which Docker's port mapping handles poorly at these ranges.
+# MongoDB is published on 127.0.0.1 only, never to the internet.
+# Full guide: infrastructure/docker/README.md
+name: schole
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    command: ["--bind_ip_all", "--wiredTigerCacheSizeGB", "0.5"]
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    image: schole:latest
+    restart: unless-stopped
+    network_mode: host
+    env_file: infrastructure/docker/.env
+    environment:
+      MONGODB_URI: mongodb://127.0.0.1:27017/schole
+      HOST: 127.0.0.1 # only Caddy faces the internet
+      PORT: "4000"
+      TRUST_PROXY: "1"
+    volumes:
+      - app-data:/data # recordings and backups
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  coturn:
+    image: coturn/coturn:4.6
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./infrastructure/docker/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    network_mode: host
+    env_file: infrastructure/docker/.env
+    volumes:
+      - ./infrastructure/docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+
+volumes:
+  mongo-data:
+  app-data:
+  caddy-data:
+  caddy-config:

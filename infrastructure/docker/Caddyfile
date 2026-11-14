@@ -1,0 +1,13 @@
+# HTTPS for the app, with certificates from Let's Encrypt, renewed automatically.
+# APP_DOMAIN comes from infrastructure/docker/.env and must point at this server (A/AAAA record).
+{$APP_DOMAIN} {
+	encode zstd gzip
+	# Socket.IO (WebSocket) and the API share the origin; Caddy proxies upgrades as-is.
+	reverse_proxy 127.0.0.1:4000 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+}

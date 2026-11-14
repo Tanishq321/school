@@ -6,9 +6,28 @@ A video meeting and virtual classroom platform that runs entirely on infrastruct
 
 **Every class is one-to-one: one teacher, one student.** The server enforces it in both media modes.
 
-**Status: Phase 5 complete** (administration, account security, monitoring, mobile app shells). Earlier phases: consent-based server-side recording with a private archive and player, email invitations with calendar files, a month calendar, a class ledger with notes, attendance and transcripts, on top of teacher controls, presentation, chat and whiteboard. See the [roadmap](#roadmap).
+**Status: Phase 5 complete, Phase 6 in part** (teaching tools for both sides, Docker, backups with a restore drill, a signalling load test; multi-server is designed, not built). Earlier phases: consent-based server-side recording with a private archive and player, email invitations with calendar files, a month calendar, a class ledger with notes, attendance and transcripts, on top of teacher controls, presentation, chat and whiteboard. See the [roadmap](#roadmap).
 
 The brand name lives in one place (`frontend/src/brand.js`, `APP_NAME` on the server); set `VITE_APP_NAME` / `APP_NAME` to rename it.
+
+## Teaching tools: teacher side and student side (latest)
+
+**Teacher**
+- **Students register** (`/students`): everyone you teach, next lesson first, with lessons held, hours, attendance rate and homework done. Each student has a page: figures, booked lessons, and every past lesson with whether they came, whether notes were written, and their homework.
+- **Weekly series:** schedule 4, 6, 8, 10, 12 or 26 lessons at once. The student gets one invitation with every date in one calendar file. Each lesson can be moved alone; cancelling offers "this lesson only" or "this and following lessons".
+- **After the lesson:** a summary and a homework list for the student on the class page (separate from the private notes, which stay private). "Save and send" emails it. The student's ticks appear as they make them.
+- **Today:** this week's lessons, hours taught, active students, and the lessons still waiting for notes, each one click from writing them.
+
+**Student**
+- **After the lesson:** the teacher's notes on ruled paper and a homework checklist with a progress rule; ticks save at once.
+- **Today:** this month's lessons and hours of study, homework to do, weeks in a row with a lesson, the latest notes from teachers, and a "before your lesson" connection check.
+- **Series** show as a strip of dated stops on every class page, with the current lesson marked.
+
+**Both:** emails when a lesson is moved (the calendar entry updates in place) or cancelled (it leaves the calendar), a reminder 30 minutes before each class (`REMINDER_MINUTES`), and every email shows times in the reader's own time zone, taken from their device.
+
+**House rules:** administrators must turn on two-step sign-in before the console opens (`ADMIN_REQUIRE_2FA`, on by default in production).
+
+**The instrument** on the landing page now carries engraving drawn in code: the zodiac band with its twelve signs and degree scale, a horizon dial with the cardinal points and the house inscription, a latitude scale on the meridian, gilt constellations on the globe, a guilloché rosette and compass rose inlaid in the plinth, a rayed sun, a moon that shows its phase, and turned finials.
 
 ## What works now (Phase 1)
 
@@ -19,6 +38,22 @@ The brand name lives in one place (`frontend/src/brand.js`, `APP_NAME` on the se
 - Attendance recorded from real join/leave times (reconnects don't split sessions)
 - Connection test page: browser support, devices, ICE candidates, TURN allocation and a real relay loopback
 - Light/dark mode, responsive down to phones, accessible controls
+
+## Design update: light and dark, 3D, scroll
+
+- **Follows the device.** The app is light or dark according to the phone's or computer's setting, and switches live when the device does, with no reload and no flash on first paint.
+  - Members can fix Light or Dark under **Account → Appearance**, from the sun/moon button, or from the command palette.
+  - Classes and the screening room stay dark in both, like a cinema.
+- **A real light theme.** Warm ivory, ink and stone, with brass only as a fine accent. The navigation spine becomes ivory linen and the hero panels morning light on paper. The background shader turns into ivory silk by day (it dissolves between the two).
+- **3D instrument.** A brass armillary sphere, the emblem of scholarship, built from geometry in Three.js with physically based metal and studio reflections.
+  - It assembles itself on arrival and turns slowly on the sign-in screen.
+  - Three.js loads only on those pages (about 140 KB compressed), never inside the app.
+  - Devices without a GPU get still frames; devices without WebGL2 see the engraved rosette instead.
+- **Scroll story.** The landing page pins the instrument while you scroll through four chapters; the camera travels around it, and every move is damped so it feels weighted without taking over the scroll.
+  - A brass reading-progress line runs along the top.
+  - Sections, rules and lists rise into place, and ornaments drift slower than the page.
+  - These use native CSS scroll-driven animations. Browsers without them, and anyone who asks for reduced motion, get the complete page with nothing hidden and no pinning.
+  - On phones the instrument floats above the words.
 
 ## Phase 5 additions
 
@@ -95,6 +130,12 @@ cd ../frontend && npm ci && npm run dev            # http://localhost:5173
 
 Verification emails are printed to the backend log when SMTP isn't configured.
 
+Demo data for a look around: `cd backend && DEMO_PASSWORD='choose-one' npm run seed:demo` (a teacher, three students, a weekly series with notes and homework; refuses to run in production).
+
+## Run it with Docker
+
+`docker compose up -d --build` runs the app, MongoDB, coturn and Caddy (automatic HTTPS) on one server. See [infrastructure/docker/README.md](infrastructure/docker/README.md). The image has not yet been built outside this repository's CI-less environment; build it once on your server first.
+
 ## Repository layout
 
 ```
@@ -102,25 +143,26 @@ backend/           Express 5 + Socket.IO 4.8 + Mongoose 9 API and signalling
   src/config       env validation (zod), DB connection
   src/controllers  REST handlers
   src/middleware   auth, RBAC, validation, rate limits, errors
-  src/models       User, RefreshToken, OneTimeToken, Meeting, Attendance, AuditLog, ChatMessage, Whiteboard, Recording
-  src/routes       /api/auth, /api/meetings, /api/recordings, /api/diagnostics
-  src/services     auth, tokens, meetings, attendance, TURN credentials, mailer, audit, expiry job
+  src/models       User, RefreshToken, OneTimeToken, Meeting, Attendance, AuditLog, ChatMessage, Whiteboard, Recording, JobClaim
+  src/routes       /api/auth, /api/meetings, /api/recordings, /api/students, /api/me, /api/admin, /api/diagnostics
+  src/services     auth, tokens, meetings, attendance, insights (register, figures), TURN credentials, mailer, calendar, audit, expiry and reminder jobs
+  src/scripts      create-admin, seed:demo, backup / restore / backup:drill, load:signalling
   src/sockets      handshake auth, live room registry, meeting & signalling events
   src/recording    RTP → Ogg Opus / VP8 IVF writers, recorder, FFmpeg composer
-  tests/           Vitest suites (65 tests)
+  tests/           Vitest suites (97 tests)
 frontend/          React 19 + Vite 8 + Tailwind 4
   src/services     api client, LocalMedia (devices), P2PPeer (RTCPeerConnection), MeetingClient
   src/pages        landing, auth, Today, Calendar, Classes (+ class page), Recordings (+ player), meeting room, diagnostics, profile
   src/components   UI kit, app shell, video tiles, participants panel, device settings
-e2e/               Puppeteer two-browser WebRTC tests (direct + TURN relay)
-infrastructure/    coturn configs + TURN test script, Nginx site, PM2, firewall, backups
+e2e/               Puppeteer multi-browser tests (WebRTC, seat rule, recording, security, lessons), screenshot and icon tools
+infrastructure/    coturn configs + TURN test script, Nginx site, PM2, firewall, backups, docker (Caddyfile, env)
 docs/              architecture, setup, deployment, security, testing
 ```
 
 ## Tests
 
 ```bash
-cd backend && npm test                        # 79 API, socket, SFU, recording and security tests (needs ffmpeg)
+cd backend && npm test                        # 97 API, socket, SFU, recording, security and lessons tests (needs ffmpeg)
 cd frontend && npm run build && cd ../e2e && npm ci && node run-e2e.mjs   # P2P: direct + TURN relay
 E2E_SFU=1 node run-e2e.mjs     # through the SFU: direct, relay, one-student seat rule, real recording
 E2E_SPLIT=1 node run-e2e.mjs   # same, with Vercel-style split origins
@@ -137,7 +179,7 @@ See [docs/testing.md](docs/testing.md) for what is covered and what still needs 
 | 3 | Screen sharing, chat, whiteboard, attendance export, classroom permissions | ✅ done |
 | 4 | Server-side recording (consent), archive & player, invitations, calendar, class history | ✅ done |
 | 5 | Admin console, two-step sign-in, lockout, devices, monitoring, Capacitor Android/iOS shells | ✅ done (apps not yet device-tested) |
-| 6 | Production deployment, load tests, multi-server, disaster recovery | next |
+| 6 | Production deployment, load tests, multi-server, disaster recovery | in part: Docker + compose, backup/restore drill + runbook, signalling load test done; multi-server designed only ([operations](docs/operations.md)) |
 
 ## Try it online (test deployment)
 
@@ -145,4 +187,4 @@ GitHub → Render (+ optional Vercel) + MongoDB Atlas: see [docs/deploy-render-v
 
 ## Docs
 
-[Architecture](docs/architecture.md) · [Setup](docs/setup.md) · [Deployment (VPS)](docs/deployment.md) · [Test deploy (Render/Vercel)](docs/deploy-render-vercel.md) · [Security](docs/security.md) · [Monitoring](docs/monitoring.md) · [Mobile apps](docs/mobile-apps.md) · [Testing](docs/testing.md)
+[Architecture](docs/architecture.md) · [Setup](docs/setup.md) · [Deployment (VPS)](docs/deployment.md) · [Test deploy (Render/Vercel)](docs/deploy-render-vercel.md) · [Security](docs/security.md) · [Operations, backups, capacity](docs/operations.md) · [Monitoring](docs/monitoring.md) · [Mobile apps](docs/mobile-apps.md) · [Testing](docs/testing.md)
